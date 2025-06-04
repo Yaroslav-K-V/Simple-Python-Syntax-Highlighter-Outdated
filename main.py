@@ -1,140 +1,86 @@
-import tkinter as tk
-from tkinter import filedialog
+import sys
+import asyncio
+from PyQt5.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QPlainTextEdit,
+    QPushButton,
+    QFileDialog,
+    QVBoxLayout,
+    QWidget,
+    QHBoxLayout,
+)
 
-import pygments
-
-from pygments import highlight,styles
-from pygments.lexers import PythonLexer
-from pygments.formatters import HtmlFormatter
-from pygments.lexers import get_lexer_by_name
-
-import os
-
-from pygments.formatters.terminal import TerminalFormatter
-
-#some constants for style
-style = styles.get_style_by_name('monokai')
-formatter=TerminalFormatter(style=style,full=True,linenos=True)
+from syntax_highlighter import Highlighter
 
 
-def clear_highlight(text_widget):
-    text_widget.tag_remove("Token.Comment", "1.0", tk.END)
-    text_widget.tag_remove("Token.Keyword", "1.0", tk.END)
-    text_widget.tag_remove("Token.Literal.String", "1.0", tk.END)
-    text_widget.tag_remove("Token.Operator", "1.0", tk.END)
-    text_widget.tag_remove("Token.Name.Function", "1.0", tk.END)
+class MainWindow(QMainWindow):
+    """Main application window."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("Python Syntax Highlighter")
+
+        self.editor = QPlainTextEdit()
+        self.highlighter = Highlighter(self.editor.document())
+
+        self.load_button = QPushButton("Load")
+        self.save_button = QPushButton("Save")
+        self.load_button.clicked.connect(lambda: asyncio.run(self.load_file()))
+        self.save_button.clicked.connect(lambda: asyncio.run(self.save_file()))
+
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.load_button)
+        buttons.addWidget(self.save_button)
+
+        layout = QVBoxLayout()
+        layout.addLayout(buttons)
+        layout.addWidget(self.editor)
+
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+        self.resize(640, 480)
+
+    async def load_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open File",
+            "",
+            "Python Files (*.py)",
+        )
+        if path:
+            text = await asyncio.to_thread(self._read_file, path)
+            self.editor.setPlainText(text)
+
+    async def save_file(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save File",
+            "",
+            "Python Files (*.py)",
+        )
+        if path:
+            text = self.editor.toPlainText()
+            await asyncio.to_thread(self._write_file, path, text)
+
+    @staticmethod
+    def _read_file(path: str) -> str:
+        with open(path, "r", encoding="utf-8") as file:
+            return file.read()
+
+    @staticmethod
+    def _write_file(path: str, text: str) -> None:
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(text)
 
 
-def apply_highlight(text_widget, Raw_text):
-    tokens = pygments.lex(Raw_text, PythonLexer())
-
-    current_index = "1.0"
-
-    for token_type, token_value in tokens:
-        end_index = text_widget.index(f"{current_index}+{len(token_value)}c")
-
-        # Tokens for keywords
-        if str(token_type).startswith("Token.Keyword"):
-            text_widget.tag_add("Token.Keyword", current_index, end_index)
-        elif str(token_type).startswith("Token.Comment"):
-            text_widget.tag_add("Token.Comment", current_index, end_index)
-        elif str(token_type).startswith("Token.Literal.String"):
-            text_widget.tag_add("Token.Literal.String", current_index, end_index)
-        elif str(token_type).startswith("Token.Operator"):
-            text_widget.tag_add("Token.Operator", current_index, end_index)
-        elif str(token_type).startswith("Token.Name.Function"):
-            text_widget.tag_add("Token.Name.Function", current_index, end_index)
-        elif str(token_type).startswith("Token.Name.Class"):
-            text_widget.tag_add("Token.Name.Class", current_index, end_index)
-        elif str(token_type).startswith("Token.Name.Builtin"):
-            text_widget.tag_add("Token.Name.Builtin", current_index,end_index)
-        elif str(token_type).startswith("Token.Name.Variable"):
-            text_widget.tag_add("Token.Name.Variable", current_index, end_index)
-        elif str(token_type).startswith("Token.Name.Function"):
-            text_widget.tag_add("Token.Name.Function", current_index, end_index)
+def main() -> None:
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
 
 
-        current_index = end_index
-
-
-def highlighted_text(event):
-    text_widget = event.widget
-    Raw_text = text_widget.get("1.0", "end-1c")
-
-
-    clear_highlight(text_widget)
-
-
-    apply_highlight(text_widget, Raw_text)
-
-
-
-def Save_function():
-    file_path=filedialog.asksaveasfilename()
-    Text_of_file=text_widget.get("1.0","end-1c")
-    f = open(file_path,'w')
-    f.write(Text_of_file)
-    print(Text_of_file)
-    f.close()
-
-def Load_function():
-    file_path = filedialog.askopenfilename()
-    if os.path.exists(file_path):
-        f = open(file_path, 'r')
-        Text_of_file = f.read()
-        text_widget.delete("1.0", tk.END)
-        text_widget.insert(tk.INSERT, Text_of_file)
-        print(Text_of_file)
-        f.close()
-    else:
-        print("File does not exist")
-
-root = tk.Tk()
-
-Btn_frame = tk.Frame(root)
-Text_frame = tk.Frame(root)
-
-Text_frame.grid(row=1, column=0, sticky="nsew")
-
-text_widget = tk.Text(Text_frame,wrap='word')
-text_widget.grid(row=0, column=0, sticky="nsew")
-
-Quit_btn_widget = tk.Button(Btn_frame, text="Quit",command=root.destroy, padx=5, pady=5)
-Quit_btn_widget.grid(row=0,column=3)
-
-Save_btn_widget = tk.Button(Btn_frame, text="Save",command=Save_function, padx=5, pady=5)
-Save_btn_widget.grid(row=0,column=2)
-
-Load_btn_widget = tk.Button(Btn_frame, text="Load",command=Load_function, padx=5, pady=5)
-Load_btn_widget.grid(row=0,column=1)
-
-Set_btn_widget = tk.Button(Btn_frame, text="Setting", padx=5, pady=5)
-Set_btn_widget.grid(row=0,column=0)
-
-Btn_frame.grid(row=0, column=0, sticky="ew")
-
-root.rowconfigure(1, weight=1)
-root.columnconfigure(0, weight=1)
-
-Text_frame.rowconfigure(0, weight=1)
-Text_frame.columnconfigure(0, weight=1)
-
-root.minsize(width=300, height=200)
-
-text_widget.bind('<KeyRelease>',highlighted_text)
-
-text_widget.tag_configure("Token.Keyword", foreground="blue")
-text_widget.tag_configure("Token.Comment", foreground="green")
-text_widget.tag_configure("Token.Literal.String", foreground="orange")
-text_widget.tag_configure("Token.Operator", foreground="purple")
-text_widget.tag_configure("Token.Name.Function", foreground="brown")
-text_widget.tag_configure("Token.Name.Class", foreground="red", font=('TkDefaultFont', 10, 'bold'))
-text_widget.tag_configure("Token.Name.Builtin", foreground="magenta")
-text_widget.tag_configure("Token.Name.Variable", foreground="darkcyan")
-text_widget.tag_configure("Token.Name.Function", foreground="brown", font=('TkDefaultFont', 10, 'italic'))
-
-
-
-
-root.mainloop()
-
+if __name__ == "__main__":
+    main()
