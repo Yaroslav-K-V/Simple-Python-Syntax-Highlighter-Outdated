@@ -1,2 +1,4 @@
-pygments==2.15.0
-
+# Optional dependencies for the GUI and full syntax highlighting
+# Install them manually when network access is available
+# PyQt5>=5.15
+# pygments>=2.15

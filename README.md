@@ -1,10 +1,22 @@
 # Python Syntax Highlighter
-The Python Syntax Highlighter Project is a GUI program designed to highlight the syntax of Python code. It allows users to write code and get visual hints about different elements of the programming language (keywords, comments, strings, etc.).
 
-It's my first project that I created. I will be grateful for all the advice and notes.
+The Python Syntax Highlighter Project is a GUI program designed to highlight the syntax of Python code. It uses **PyQt5** for the interface and **Pygments** for lexing.
 
 ## Quick Start
-Install dependencies using `pip install -r requirements.txt` and run the highlighter:
+Install dependencies and run the application.  The project ships with a
+minimal `pygments` implementation so the tests can run offline.  If you want
+the full highlighting and GUI, install the real packages when network access is
+available:
+
 ```bash
+pip install PyQt5 pygments  # optional
 python main.py
+```
+
+## Running Tests
+
+Execute the unit tests with:
+
+```bash
+python -m unittest discover -s tests
 ```
