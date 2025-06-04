@@ -14,7 +14,7 @@ from pygments.formatters.terminal import TerminalFormatter
 
 #some constants for style
 style = styles.get_style_by_name('monokai')
-fotmatter=TerminalFormatter(style=style,full=True,linenos=True)
+formatter=TerminalFormatter(style=style,full=True,linenos=True)
 
 
 def clear_highlight(text_widget):
