@@ -1,0 +1,6 @@
+site_name: Python Syntax Highlighter
+site_description: Minimal documentation for the Python Syntax Highlighter project.
+docs_dir: docs
+site_dir: site
+nav:
+  - Home: index.md
