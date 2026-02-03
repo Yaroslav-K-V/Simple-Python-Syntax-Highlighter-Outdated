@@ -1,4 +1,5 @@
 """Syntax highlighter with theme support."""
+from __future__ import annotations
 from typing import List, Tuple, Dict
 from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QFont
 from pygments import lex
