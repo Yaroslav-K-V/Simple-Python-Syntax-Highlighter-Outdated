@@ -38,3 +38,8 @@ You can generate and push a random 6-character tag with:
 ```powershell
 .\scripts\new_random_tag.bat
 ```
+
+The script:
+- Prompts for a title and description (saved in an annotated tag).
+- Pushes the tag to `origin`.
+- Optionally pushes the current branch (`git push -u origin <branch>`).

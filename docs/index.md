@@ -38,3 +38,6 @@ Generate and push a random 6-character tag with:
 ```powershell
 .\scripts\new_random_tag.bat
 ```
+
+The script stores the title/description as an annotated tag, pushes the tag to
+`origin`, and can optionally push the current branch.
