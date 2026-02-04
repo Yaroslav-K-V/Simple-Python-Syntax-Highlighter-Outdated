@@ -4,3 +4,6 @@ docs_dir: docs
 site_dir: site
 nav:
   - Home: index.md
+  - Autocomplete: autocomplete.md
+  - Model Variants: models.md
+  - Guides: guides.md
