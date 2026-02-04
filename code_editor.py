@@ -1,6 +1,6 @@
 """Code editor widget with line numbers, auto-indent, bracket matching."""
-from PySide6.QtWidgets import QPlainTextEdit, QWidget, QTextEdit
-from PySide6.QtCore import Qt, QRect, QSize, Slot
+from PySide6.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QCompleter
+from PySide6.QtCore import Qt, QRect, QSize, Slot, Signal, QStringListModel
 from PySide6.QtGui import (
     QColor, QPainter, QTextFormat, QKeyEvent, QTextCharFormat, QTextCursor,
 )
@@ -27,12 +27,23 @@ class LineNumberArea(QWidget):
 class CodeEditor(QPlainTextEdit):
     """Plain text editor with line numbers and smart editing."""
 
+    status_message = Signal(str)
+
     def __init__(self, theme_manager, parent=None) -> None:
         super().__init__(parent)
         self._theme = theme_manager
         self._line_area = LineNumberArea(self)
         self._tab_size = 4
         self._use_spaces = True
+        self._ghost_text = ""
+
+        self._completion_model = QStringListModel(self)
+        self._completer = QCompleter(self)
+        self._completer.setWidget(self)
+        self._completer.setModel(self._completion_model)
+        self._completer.setCompletionMode(QCompleter.PopupCompletion)
+        self._completer.setCaseSensitivity(Qt.CaseSensitive)
+        self._completer.activated.connect(self._insert_completion)
 
         self.blockCountChanged.connect(self._update_width)
         self.updateRequest.connect(self._update_area)
@@ -72,6 +83,20 @@ class CodeEditor(QPlainTextEdit):
         self._line_area.setGeometry(
             QRect(cr.left(), cr.top(), self.line_number_width(), cr.height())
         )
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if not self._ghost_text:
+            return
+        painter = QPainter(self.viewport())
+        colors = self._theme.get_colors()
+        painter.setPen(QColor(colors.get("ghost_text", "#8a8a8a")))
+        cursor_rect = self.cursorRect()
+        metrics = self.fontMetrics()
+        x = cursor_rect.x()
+        y = cursor_rect.y() + metrics.ascent()
+        ghost = self._ghost_text.splitlines()[0]
+        painter.drawText(x, y, ghost)
 
     def paint_line_numbers(self, event) -> None:
         """Paint line numbers in gutter."""
@@ -205,6 +230,21 @@ class CodeEditor(QPlainTextEdit):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press with auto-indent."""
+        if self._ghost_text:
+            if event.key() == Qt.Key_Tab:
+                self._accept_autocomplete()
+                return
+            if event.key() == Qt.Key_Escape:
+                self.clear_autocomplete()
+                return
+            if event.key() in (
+                Qt.Key_Backspace,
+                Qt.Key_Delete,
+                Qt.Key_Return,
+                Qt.Key_Enter,
+            ) or event.text():
+                self.clear_autocomplete()
+
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             self._handle_newline()
             return
@@ -276,6 +316,39 @@ class CodeEditor(QPlainTextEdit):
             cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
             for _ in range(remove):
                 cursor.deleteChar()
+
+    def _insert_completion(self, text: str) -> None:
+        if not text:
+            return
+        cursor = self.textCursor()
+        cursor.insertText(text)
+        self.setTextCursor(cursor)
+        self.clear_autocomplete()
+
+    def _accept_autocomplete(self) -> None:
+        if not self._ghost_text:
+            return
+        self._insert_completion(self._ghost_text)
+
+    def set_autocomplete_suggestion(self, text: str) -> None:
+        self._ghost_text = text
+        self.viewport().update()
+        if text:
+            self._completion_model.setStringList([text])
+            self._completer.setCompletionPrefix("")
+            self._completer.complete(self.cursorRect())
+        else:
+            self._completer.popup().hide()
+
+    def clear_autocomplete(self) -> None:
+        if not self._ghost_text:
+            return
+        self._ghost_text = ""
+        self.viewport().update()
+        self._completer.popup().hide()
+
+    def set_status_message(self, message: str) -> None:
+        self.status_message.emit(message)
 
     def apply_theme(self) -> None:
         """Apply current theme colors."""

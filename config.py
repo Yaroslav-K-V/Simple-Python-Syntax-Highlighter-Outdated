@@ -21,6 +21,18 @@ DEFAULT_CONFIG = {
         'auto_save': False,
         'auto_save_interval': 30,
     },
+    'autocomplete': {
+        'enabled': True,
+        'model_dir': 'model',
+        'device': 'auto',  # 'auto', 'cpu', 'cuda'
+        'max_new_tokens': 32,
+        'context_tokens': 1024,
+        'context_chars': 4000,
+        'temperature': 0.0,
+        'top_p': 0.9,
+        'debounce_ms': 150,
+        'allow_in_strings': False,
+    },
 }
 
 
@@ -97,3 +109,43 @@ class Config:
     @property
     def trim_whitespace(self) -> bool:
         return self.get('files', 'trim_whitespace')
+
+    @property
+    def autocomplete_enabled(self) -> bool:
+        return self.get('autocomplete', 'enabled')
+
+    @property
+    def autocomplete_model_dir(self) -> str:
+        return self.get('autocomplete', 'model_dir')
+
+    @property
+    def autocomplete_device(self) -> str:
+        return self.get('autocomplete', 'device')
+
+    @property
+    def autocomplete_max_new_tokens(self) -> int:
+        return self.get('autocomplete', 'max_new_tokens')
+
+    @property
+    def autocomplete_context_tokens(self) -> int:
+        return self.get('autocomplete', 'context_tokens')
+
+    @property
+    def autocomplete_context_chars(self) -> int:
+        return self.get('autocomplete', 'context_chars')
+
+    @property
+    def autocomplete_temperature(self) -> float:
+        return self.get('autocomplete', 'temperature')
+
+    @property
+    def autocomplete_top_p(self) -> float:
+        return self.get('autocomplete', 'top_p')
+
+    @property
+    def autocomplete_debounce_ms(self) -> int:
+        return self.get('autocomplete', 'debounce_ms')
+
+    @property
+    def autocomplete_allow_in_strings(self) -> bool:
+        return self.get('autocomplete', 'allow_in_strings')

@@ -23,6 +23,7 @@ DARK_COLORS = {
     'builtin': '#c586c0',
     'variable': '#9cdcfe',
     'text': '#d4d4d4',
+    'ghost_text': '#6f6f6f',
 }
 
 LIGHT_COLORS = {
@@ -41,6 +42,7 @@ LIGHT_COLORS = {
     'builtin': '#af00db',
     'variable': '#001080',
     'text': '#000000',
+    'ghost_text': '#a0a0a0',
 }
 
 

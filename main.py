@@ -14,6 +14,7 @@ from code_editor import CodeEditor
 from highlighter import Highlighter
 from find_bar import FindBar
 from settings_dialog import SettingsDialog
+from autocomplete import AutocompleteController
 
 
 class MainWindow(QMainWindow):
@@ -50,10 +51,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self._highlighter = Highlighter(self._editor.document(), self._theme)
+        self._autocomplete = AutocompleteController(self._editor, self._config)
 
         self._setup_menus()
         self._setup_shortcuts()
         self._setup_status_bar()
+        self._editor.status_message.connect(self.statusBar().showMessage)
         self._apply_theme(self._theme.get_theme())
         self._update_title()
         self.resize(800, 600)
@@ -217,6 +220,7 @@ class MainWindow(QMainWindow):
             self._theme.set_theme(self._config.theme)
         else:
             self._theme.refresh()
+        self._autocomplete.reload_settings()
 
     @Slot()
     def _update_cursor(self) -> None:
@@ -228,6 +232,8 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _apply_theme(self, _: str) -> None:
+        if not hasattr(self, "_editor"):
+            return
         self._editor.apply_theme()
         self._update_theme_checks()
         colors = self._theme.get_colors()
