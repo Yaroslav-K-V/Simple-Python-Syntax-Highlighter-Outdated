@@ -208,7 +208,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def _show_settings(self) -> None:
         """Show settings dialog."""
-        dialog = SettingsDialog(self._config, self)
+        dialog = SettingsDialog(self._config, self._theme, self)
         dialog.settings_changed.connect(self._on_settings_changed)
         dialog.exec()
 

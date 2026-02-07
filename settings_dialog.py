@@ -16,13 +16,16 @@ class SettingsDialog(QDialog):
 
     settings_changed = Signal()
 
-    def __init__(self, config: Config, parent=None) -> None:
+    def __init__(self, config: Config, theme_manager, parent=None) -> None:
         super().__init__(parent)
         self._config = config
+        self._theme = theme_manager
+        self._theme.theme_changed.connect(self._apply_theme)
         self.setWindowTitle('Settings')
         self.setMinimumWidth(400)
         self._setup_ui()
         self._load_settings()
+        self._apply_theme(self._theme.get_theme())
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -208,6 +211,10 @@ class SettingsDialog(QDialog):
         )
         ac_layout.addRow(self._ac_allow_strings)
 
+        self._ac_llm_first = QCheckBox('Prefer model suggestions first')
+        self._ac_llm_first.setChecked(self._config.autocomplete_llm_first)
+        ac_layout.addRow(self._ac_llm_first)
+
         layout.addWidget(ac_group)
         layout.addStretch()
 
@@ -223,6 +230,65 @@ class SettingsDialog(QDialog):
     def _load_settings(self) -> None:
         """Load current settings into UI."""
         pass  # Already done in _setup_ui
+
+    def _apply_theme(self, _: str) -> None:
+        colors = self._theme.get_colors()
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['editor_bg']};
+                color: {colors['editor_fg']};
+            }}
+            QTabWidget::pane {{
+                border: 1px solid {colors['line_number']};
+            }}
+            QTabBar::tab {{
+                background-color: {colors['gutter_bg']};
+                color: {colors['editor_fg']};
+                padding: 4px 10px;
+                border: 1px solid {colors['line_number']};
+                margin-right: 2px;
+            }}
+            QTabBar::tab:selected {{
+                background-color: {colors['current_line']};
+            }}
+            QGroupBox {{
+                border: 1px solid {colors['line_number']};
+                margin-top: 10px;
+                color: {colors['editor_fg']};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                background-color: {colors['editor_bg']};
+            }}
+            QLabel {{
+                color: {colors['editor_fg']};
+            }}
+            QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
+                background-color: {colors['editor_bg']};
+                color: {colors['editor_fg']};
+                border: 1px solid {colors['line_number']};
+                padding: 2px 6px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {colors['editor_bg']};
+                color: {colors['editor_fg']};
+                selection-background-color: {colors['selection']};
+            }}
+            QPushButton {{
+                background-color: {colors['gutter_bg']};
+                color: {colors['editor_fg']};
+                border: 1px solid {colors['line_number']};
+                padding: 2px 10px;
+            }}
+            QPushButton:hover {{
+                background-color: {colors['selection']};
+            }}
+            QCheckBox {{
+                color: {colors['editor_fg']};
+            }}
+        """)
 
     def _apply_settings(self) -> None:
         """Apply settings without closing."""
@@ -257,6 +323,8 @@ class SettingsDialog(QDialog):
                          self._ac_debounce.value())
         self._config.set('autocomplete', 'allow_in_strings',
                          self._ac_allow_strings.isChecked())
+        self._config.set('autocomplete', 'llm_first',
+                         self._ac_llm_first.isChecked())
         self._config.save()
         self.settings_changed.emit()
 

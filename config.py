@@ -32,6 +32,7 @@ DEFAULT_CONFIG = {
         'top_p': 0.9,
         'debounce_ms': 150,
         'allow_in_strings': False,
+        'llm_first': True,
     },
 }
 
@@ -149,3 +150,7 @@ class Config:
     @property
     def autocomplete_allow_in_strings(self) -> bool:
         return self.get('autocomplete', 'allow_in_strings')
+
+    @property
+    def autocomplete_llm_first(self) -> bool:
+        return self.get('autocomplete', 'llm_first')

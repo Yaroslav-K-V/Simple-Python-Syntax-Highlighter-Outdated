@@ -58,6 +58,7 @@ class AutocompleteSettings:
     top_p: float
     debounce_ms: int
     allow_in_strings: bool
+    llm_first: bool
 
 
 class AutocompleteWorker(QObject):
@@ -204,6 +205,21 @@ class AutocompleteEngine(QObject):
 class AutocompleteController(QObject):
     """Connects editor events to the autocomplete engine."""
 
+    _COMMON_DOT_IDENTIFIERS = [
+        "Console.WriteLine",
+        "Console.Write",
+        "System.out.println",
+        "System.out.print",
+        "System.out.printf",
+        "String.format",
+        "Math.Max",
+        "Math.Min",
+        "Math.Abs",
+        "Math.Round",
+        "Math.Floor",
+        "Math.Ceiling",
+    ]
+
     def __init__(self, editor, config) -> None:
         super().__init__(editor)
         self._editor = editor
@@ -222,6 +238,9 @@ class AutocompleteController(QObject):
         self._latest_prefix = ""
         self._last_symbol_text = ""
         self._symbol_cache: list[str] = []
+        self._fallback_symbol = ""
+        self._fallback_prefix = ""
+        self._fallback_cursor = 0
 
         self._editor.textChanged.connect(self._on_text_changed)
         self._editor.cursorPositionChanged.connect(self._on_cursor_changed)
@@ -232,6 +251,7 @@ class AutocompleteController(QObject):
         tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", text))
         tokens.update(keyword.kwlist)
         tokens.update(dir(builtins))
+        tokens.update(self._COMMON_DOT_IDENTIFIERS)
         self._last_symbol_text = text
         self._symbol_cache = list(tokens)
         return self._symbol_cache
@@ -279,7 +299,7 @@ class AutocompleteController(QObject):
             return ""
         prefix, _ = self._word_prefix(text, cursor_pos)
         if not prefix:
-            return ""
+            return self._assignment_symbol_suggestion(text, cursor_pos)
         symbols = self._extract_symbols(text)
         matches = [s for s in symbols if s.startswith(prefix) and s != prefix]
         if not matches:
@@ -289,6 +309,26 @@ class AutocompleteController(QObject):
         )
         best = matches[0]
         return best[len(prefix):]
+
+    def _assignment_symbol_suggestion(self, text: str, cursor_pos: int) -> str:
+        pos = cursor_pos - 1
+        while pos >= 0 and text[pos].isspace():
+            pos -= 1
+        if pos < 0:
+            return ""
+        if text[pos] not in "=+-*/%&|^~,:()[]{}":
+            return ""
+        line_start = text.rfind("\n", 0, cursor_pos) + 1
+        prior_text = text[:line_start]
+        if not prior_text:
+            return ""
+        last_symbol = ""
+        for match in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=", prior_text):
+            eq_pos = match.end() - 1
+            if eq_pos + 1 < len(prior_text) and prior_text[eq_pos + 1] == "=":
+                continue
+            last_symbol = match.group(1)
+        return last_symbol
 
     def _read_settings(self) -> AutocompleteSettings:
         model_dir = self._config.get("autocomplete", "model_dir")
@@ -305,6 +345,7 @@ class AutocompleteController(QObject):
             top_p=self._config.get("autocomplete", "top_p"),
             debounce_ms=self._config.get("autocomplete", "debounce_ms"),
             allow_in_strings=self._config.get("autocomplete", "allow_in_strings"),
+            llm_first=self._config.get("autocomplete", "llm_first"),
         )
 
     def reload_settings(self) -> None:
@@ -324,6 +365,9 @@ class AutocompleteController(QObject):
         self._pending_text = self._editor.toPlainText()
         self._pending_cursor = self._editor.textCursor().position()
         self._editor.clear_autocomplete()
+        self._fallback_symbol = ""
+        self._fallback_prefix = ""
+        self._fallback_cursor = 0
         if not settings.allow_in_strings:
             if self._in_string_or_comment(
                 self._pending_text, self._pending_cursor
@@ -333,13 +377,22 @@ class AutocompleteController(QObject):
             self._pending_text, self._pending_cursor
         )
         if symbol_suggestion:
-            self._editor.set_autocomplete_suggestion(symbol_suggestion)
-            return
+            if settings.llm_first:
+                self._fallback_symbol = symbol_suggestion
+                self._fallback_prefix = self._pending_text[: self._pending_cursor]
+                self._fallback_cursor = self._pending_cursor
+            else:
+                self._editor.set_autocomplete_suggestion(symbol_suggestion)
+                self._editor.set_status_message("Autocomplete: symbol")
+                return
         self._timer.start(max(0, settings.debounce_ms))
 
     @Slot()
     def _on_cursor_changed(self) -> None:
         self._editor.clear_autocomplete()
+        self._fallback_symbol = ""
+        self._fallback_prefix = ""
+        self._fallback_cursor = 0
 
     @Slot()
     def _send_request(self) -> None:
@@ -366,16 +419,38 @@ class AutocompleteController(QObject):
             return
         if self._editor.toPlainText()[:cursor_pos] != prefix:
             return
-        suggestion = self._sanitize_suggestion(suggestion)
+        suggestion = self._sanitize_suggestion(suggestion, prefix)
         if not suggestion:
+            if (
+                self._config.get("autocomplete", "llm_first")
+                and
+                self._fallback_symbol
+                and cursor_pos == self._fallback_cursor
+                and prefix == self._fallback_prefix
+            ):
+                self._editor.set_autocomplete_suggestion(self._fallback_symbol)
+                self._editor.set_status_message("Autocomplete: symbol")
+                return
             self._editor.clear_autocomplete()
             return
         self._editor.set_autocomplete_suggestion(suggestion)
+        self._editor.set_status_message("Autocomplete: model")
 
-    def _sanitize_suggestion(self, suggestion: str) -> str:
+    def _sanitize_suggestion(self, suggestion: str, prefix: str) -> str:
         suggestion = suggestion.lstrip("\r\n")
         if not suggestion:
             return ""
+        word_prefix, _ = self._word_prefix(prefix, len(prefix))
+        if word_prefix:
+            suggestion = suggestion.lstrip()
+            if not suggestion:
+                return ""
+            if suggestion.startswith(word_prefix):
+                suggestion = suggestion[len(word_prefix):]
+                if not suggestion:
+                    return ""
+            if not re.match(r"[A-Za-z0-9_]", suggestion[0]):
+                return ""
         if len(suggestion) > self._max_suggestion_chars:
             suggestion = suggestion[: self._max_suggestion_chars]
         if len(suggestion) > 8:
