@@ -11,8 +11,11 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QMessageBox,
     QStatusBar, QLabel, QVBoxLayout, QWidget, QInputDialog,
 )
-from PySide6.QtGui import QAction, QKeySequence, QFont, QShortcut, QTextCursor
-from PySide6.QtCore import Slot
+from PySide6.QtGui import (
+    QAction, QKeySequence, QFont, QShortcut, QTextCursor,
+    QDragEnterEvent, QDropEvent,
+)
+from PySide6.QtCore import Slot, QUrl
 
 from config import Config
 from theme import ThemeManager
@@ -49,8 +52,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Code editor
+        # Code editor (drops disabled so MainWindow receives file drags)
         self._editor = CodeEditor(self._theme, self)
+        self._editor.setAcceptDrops(False)
         self._apply_font()
         self._editor.textChanged.connect(self._mark_unsaved)
         self._editor.cursorPositionChanged.connect(self._update_cursor)
@@ -76,6 +80,7 @@ class MainWindow(QMainWindow):
         self._apply_theme(self._theme.get_theme())
         self._update_title()
         self.resize(800, 600)
+        self.setAcceptDrops(True)  # Allow drag & drop of files
 
     # ── Font ─────────────────────────────────────────────────────
 
@@ -338,6 +343,9 @@ class MainWindow(QMainWindow):
             self._file = path
             self._unsaved = False
             self._update_title()
+            # Remember this file for next launch
+            self._config.set('files', 'last_opened', path)
+            self._config.save()
         except FileNotFoundError:
             QMessageBox.critical(self, 'Error', f'File not found: {path}')
         except PermissionError:
@@ -379,6 +387,9 @@ class MainWindow(QMainWindow):
             self._file = path
             self._unsaved = False
             self._update_title()
+            # Remember this file for next launch
+            self._config.set('files', 'last_opened', path)
+            self._config.save()
         except PermissionError:
             QMessageBox.critical(self, 'Error', f'Permission denied: {path}')
         except OSError as e:
@@ -398,6 +409,20 @@ class MainWindow(QMainWindow):
         if not self._unsaved:
             self._unsaved = True
             self._update_title()
+
+    # ── Drag & Drop ──────────────────────────────────────────────
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        """Accept the drag if it contains file URLs."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        """Open the first dropped file."""
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                self._load_file(url.toLocalFile())
+                break  # Open only the first file
 
     # ── Close handling ───────────────────────────────────────────
 
@@ -427,6 +452,13 @@ def main() -> None:
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
+
+    # Open a file from CLI argument, or restore the last opened file
+    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
+        window._load_file(sys.argv[1])
+    elif window._config.last_opened and os.path.isfile(window._config.last_opened):
+        window._load_file(window._config.last_opened)
+
     sys.exit(app.exec())
 
 

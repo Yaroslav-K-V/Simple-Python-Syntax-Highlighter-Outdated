@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
         'trim_whitespace': False,        # Strip trailing spaces on save
         'auto_save': False,              # (future) periodic auto-save
         'auto_save_interval': 30,        # Seconds between auto-saves
+        'last_opened': '',               # Path to the last opened file
     },
     'autocomplete': {
         'enabled': True,                 # Enable LLM autocomplete
@@ -135,6 +136,11 @@ class Config:
     def trim_whitespace(self) -> bool:
         """Whether to strip trailing whitespace on save."""
         return self.get('files', 'trim_whitespace')
+
+    @property
+    def last_opened(self) -> str:
+        """Path to the last opened file (empty string if none)."""
+        return self.get('files', 'last_opened')
 
     @property
     def autocomplete_enabled(self) -> bool:
