@@ -1,31 +1,51 @@
-"""Code editor widget with line numbers, auto-indent, bracket matching."""
+"""Code editor widget with line numbers, auto-indent, bracket matching.
+
+Provides a QPlainTextEdit-based editor with:
+- Line number gutter (LineNumberArea)
+- Current line highlighting
+- Bracket matching for (), [], {}
+- Auto-indent on Enter (copies indent, adds level after ':')
+- Tab / Shift+Tab handling with spaces or tabs
+- Ghost-text autocomplete overlay
+"""
 from PySide6.QtWidgets import QPlainTextEdit, QWidget, QTextEdit, QCompleter
 from PySide6.QtCore import Qt, QRect, QSize, Slot, Signal, QStringListModel
 from PySide6.QtGui import (
     QColor, QPainter, QTextFormat, QKeyEvent, QTextCharFormat, QTextCursor,
 )
 
-
+# Maps open brackets to their close counterparts
 BRACKETS = {'(': ')', '[': ']', '{': '}'}
+# Reverse map: close bracket -> open bracket
 BRACKETS_CLOSE = {v: k for k, v in BRACKETS.items()}
 
 
 class LineNumberArea(QWidget):
-    """Line number gutter widget."""
+    """Gutter widget that draws line numbers beside the editor.
+
+    Delegates all painting back to the parent CodeEditor so it can
+    align numbers with the corresponding text blocks.
+    """
 
     def __init__(self, editor: 'CodeEditor') -> None:
         super().__init__(editor)
         self._editor = editor
 
     def sizeHint(self) -> QSize:
+        """Return preferred width based on digit count."""
         return QSize(self._editor.line_number_width(), 0)
 
     def paintEvent(self, event) -> None:
+        """Forward paint event to the editor's line-number renderer."""
         self._editor.paint_line_numbers(event)
 
 
 class CodeEditor(QPlainTextEdit):
-    """Plain text editor with line numbers and smart editing."""
+    """Plain text editor with line numbers and smart editing features.
+
+    Signals:
+        status_message(str): Emitted to display a message in the status bar.
+    """
 
     status_message = Signal(str)
 
@@ -33,10 +53,11 @@ class CodeEditor(QPlainTextEdit):
         super().__init__(parent)
         self._theme = theme_manager
         self._line_area = LineNumberArea(self)
-        self._tab_size = 4
-        self._use_spaces = True
-        self._ghost_text = ""
+        self._tab_size = 4          # Number of spaces per indent level
+        self._use_spaces = True     # True = spaces, False = real tabs
+        self._ghost_text = ""       # Autocomplete suggestion shown as overlay
 
+        # --- Inline completer (popup list) ---
         self._completion_model = QStringListModel(self)
         self._completer = QCompleter(self)
         self._completer.setWidget(self)
@@ -45,31 +66,41 @@ class CodeEditor(QPlainTextEdit):
         self._completer.setCaseSensitivity(Qt.CaseSensitive)
         self._completer.activated.connect(self._insert_completion)
 
-        self.blockCountChanged.connect(self._update_width)
-        self.updateRequest.connect(self._update_area)
-        self.cursorPositionChanged.connect(self._on_cursor_changed)
+        # Connect editor signals for live updates
+        self.blockCountChanged.connect(self._update_width)       # Re-calc gutter width on line count change
+        self.updateRequest.connect(self._update_area)            # Scroll / repaint gutter
+        self.cursorPositionChanged.connect(self._on_cursor_changed)  # Highlight line & brackets
 
         self._update_width(0)
         self._highlight_current_line()
 
+    # ── Indentation settings ─────────────────────────────────────
+
     def set_indent_settings(self, tab_size: int, use_spaces: bool) -> None:
-        """Update indentation settings."""
+        """Update indentation preferences (called from Settings dialog)."""
         self._tab_size = tab_size
         self._use_spaces = use_spaces
 
+    # ── Line-number gutter ───────────────────────────────────────
+
     def line_number_width(self) -> int:
-        """Calculate width for line numbers."""
+        """Calculate pixel width required for the line-number gutter.
+
+        Reserves space for at least 3 digits and adds 8 px padding.
+        """
         digits = max(3, len(str(self.blockCount())))
         return 8 + self.fontMetrics().horizontalAdvance('9') * digits
 
     @Slot(int)
     def _update_width(self, _: int) -> None:
+        """Adjust left viewport margin to make room for the gutter."""
         self.setViewportMargins(self.line_number_width(), 0, 0, 0)
 
     @Slot(QRect, int)
     def _update_area(self, rect: QRect, dy: int) -> None:
+        """Scroll or repaint the gutter in sync with the editor viewport."""
         if dy:
-            self._line_area.scroll(0, dy)
+            self._line_area.scroll(0, dy)  # Vertical scroll
         else:
             self._line_area.update(
                 0, rect.y(), self._line_area.width(), rect.height()
@@ -78,6 +109,7 @@ class CodeEditor(QPlainTextEdit):
             self._update_width(0)
 
     def resizeEvent(self, event) -> None:
+        """Resize the gutter to match the editor's content area."""
         super().resizeEvent(event)
         cr = self.contentsRect()
         self._line_area.setGeometry(
@@ -85,9 +117,11 @@ class CodeEditor(QPlainTextEdit):
         )
 
     def paintEvent(self, event) -> None:
+        """Draw the editor content, then overlay ghost-text if present."""
         super().paintEvent(event)
         if not self._ghost_text:
             return
+        # Draw semi-transparent autocomplete suggestion at the cursor
         painter = QPainter(self.viewport())
         colors = self._theme.get_colors()
         painter.setPen(QColor(colors.get("ghost_text", "#8a8a8a")))
@@ -95,11 +129,11 @@ class CodeEditor(QPlainTextEdit):
         metrics = self.fontMetrics()
         x = cursor_rect.x()
         y = cursor_rect.y() + metrics.ascent()
-        ghost = self._ghost_text.splitlines()[0]
+        ghost = self._ghost_text.splitlines()[0]  # Only show first line
         painter.drawText(x, y, ghost)
 
     def paint_line_numbers(self, event) -> None:
-        """Paint line numbers in gutter."""
+        """Paint right-aligned line numbers inside the gutter area."""
         painter = QPainter(self._line_area)
         colors = self._theme.get_colors()
         painter.fillRect(event.rect(), QColor(colors['gutter_bg']))
@@ -107,6 +141,7 @@ class CodeEditor(QPlainTextEdit):
 
         block = self.firstVisibleBlock()
         num = block.blockNumber()
+        # Top pixel of the first visible block
         top = int(
             self.blockBoundingGeometry(block)
             .translated(self.contentOffset()).top()
@@ -114,6 +149,7 @@ class CodeEditor(QPlainTextEdit):
         bottom = top + int(self.blockBoundingRect(block).height())
         height = self.fontMetrics().height()
 
+        # Walk visible blocks and draw their line numbers
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 painter.drawText(
@@ -125,19 +161,19 @@ class CodeEditor(QPlainTextEdit):
             bottom = top + int(self.blockBoundingRect(block).height())
             num += 1
 
+    # ── Cursor change handling ───────────────────────────────────
+
     @Slot()
     def _on_cursor_changed(self) -> None:
-        """Handle cursor position change."""
+        """React to cursor movement: re-highlight line and brackets."""
         self._highlight_current_line()
         self._highlight_matching_bracket()
 
     def _highlight_current_line(self) -> None:
-        """Highlight current line."""
+        """Apply a full-width background color to the current line."""
         if self.isReadOnly():
             return
         selections = []
-
-        # Current line highlight
         selection = QTextEdit.ExtraSelection()
         color = QColor(self._theme.get_colors()['current_line'])
         selection.format.setBackground(color)
@@ -145,11 +181,12 @@ class CodeEditor(QPlainTextEdit):
         selection.cursor = self.textCursor()
         selection.cursor.clearSelection()
         selections.append(selection)
-
         self.setExtraSelections(selections)
 
+    # ── Bracket matching ─────────────────────────────────────────
+
     def _highlight_matching_bracket(self) -> None:
-        """Highlight matching bracket if cursor is near one."""
+        """Find and highlight the matching bracket near the cursor."""
         cursor = self.textCursor()
         pos = cursor.position()
         doc = self.document()
@@ -161,7 +198,7 @@ class CodeEditor(QPlainTextEdit):
         char = text[pos] if pos < len(text) else ''
         prev_char = text[pos - 1] if pos > 0 else ''
 
-        # Check if cursor is next to a bracket
+        # Determine which bracket character is adjacent to the cursor
         bracket_pos = -1
         bracket_char = ''
 
@@ -175,14 +212,13 @@ class CodeEditor(QPlainTextEdit):
         if bracket_pos < 0:
             return
 
-        # Find matching bracket
+        # Search for the matching bracket using depth tracking
         match_pos = self._find_matching_bracket(text, bracket_pos, bracket_char)
         if match_pos < 0:
             return
 
-        # Add bracket highlights to existing selections
+        # Add highlight selections for both brackets
         selections = self.extraSelections()
-
         fmt = QTextCharFormat()
         fmt.setBackground(QColor('#ffff00' if self._theme.get_theme() == 'light'
                                   else '#3a3a00'))
@@ -200,15 +236,24 @@ class CodeEditor(QPlainTextEdit):
         self.setExtraSelections(selections)
 
     def _find_matching_bracket(self, text: str, pos: int, char: str) -> int:
-        """Find position of matching bracket."""
+        """Find the position of the matching bracket using depth counting.
+
+        Args:
+            text:  Full document text.
+            pos:   Position of the bracket to match.
+            char:  The bracket character at *pos*.
+
+        Returns:
+            Index of the matching bracket, or -1 if not found.
+        """
         if char in BRACKETS:
-            # Search forward
+            # Opening bracket -> search forward
             target = BRACKETS[char]
             direction = 1
             start = pos + 1
             end = len(text)
         else:
-            # Search backward
+            # Closing bracket -> search backward
             target = BRACKETS_CLOSE[char]
             direction = -1
             start = pos - 1
@@ -219,24 +264,28 @@ class CodeEditor(QPlainTextEdit):
         while i != end:
             c = text[i]
             if c == char:
-                depth += 1
+                depth += 1      # Nested bracket of same type
             elif c == target:
                 depth -= 1
                 if depth == 0:
-                    return i
+                    return i    # Found the match
             i += direction
 
-        return -1
+        return -1  # No matching bracket found
+
+    # ── Key handling ─────────────────────────────────────────────
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        """Handle key press with auto-indent."""
+        """Handle key presses: autocomplete accept/dismiss, auto-indent, tab."""
+        # --- Autocomplete interaction ---
         if self._ghost_text:
             if event.key() == Qt.Key_Tab:
-                self._accept_autocomplete()
+                self._accept_autocomplete()  # Tab accepts the suggestion
                 return
             if event.key() == Qt.Key_Escape:
-                self.clear_autocomplete()
+                self.clear_autocomplete()    # Escape dismisses
                 return
+            # Any other typing clears the ghost text
             if event.key() in (
                 Qt.Key_Backspace,
                 Qt.Key_Delete,
@@ -245,10 +294,12 @@ class CodeEditor(QPlainTextEdit):
             ) or event.text():
                 self.clear_autocomplete()
 
+        # --- Auto-indent on Enter ---
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             self._handle_newline()
             return
 
+        # --- Tab / Shift+Tab indent ---
         if event.key() == Qt.Key_Tab:
             self._handle_tab()
             return
@@ -260,12 +311,16 @@ class CodeEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
     def _handle_newline(self) -> None:
-        """Handle Enter key with auto-indent."""
+        """Insert a newline and copy the current line's indentation.
+
+        If the line ends with ':', adds one extra indent level
+        (spaces or tab, depending on settings).
+        """
         cursor = self.textCursor()
         block = cursor.block()
         line = block.text()
 
-        # Calculate current indent
+        # Copy leading whitespace from the current line
         indent = ''
         for c in line:
             if c in ' \t':
@@ -273,7 +328,7 @@ class CodeEditor(QPlainTextEdit):
             else:
                 break
 
-        # Check if line ends with colon (increase indent)
+        # Increase indent after a colon (e.g. def, if, for, class)
         stripped = line.rstrip()
         if stripped.endswith(':'):
             if self._use_spaces:
@@ -281,12 +336,11 @@ class CodeEditor(QPlainTextEdit):
             else:
                 indent += '\t'
 
-        # Insert newline and indent
         cursor.insertText('\n' + indent)
         self.setTextCursor(cursor)
 
     def _handle_tab(self) -> None:
-        """Handle Tab key."""
+        """Insert indentation: spaces or a real tab character."""
         cursor = self.textCursor()
         if self._use_spaces:
             cursor.insertText(' ' * self._tab_size)
@@ -294,12 +348,12 @@ class CodeEditor(QPlainTextEdit):
             cursor.insertText('\t')
 
     def _handle_backtab(self) -> None:
-        """Handle Shift+Tab to decrease indent."""
+        """Remove one indent level from the start of the current line."""
         cursor = self.textCursor()
         block = cursor.block()
         line = block.text()
 
-        # Find indent to remove
+        # Count how many whitespace chars to remove (up to tab_size)
         remove = 0
         for i, c in enumerate(line):
             if c == ' ':
@@ -317,7 +371,10 @@ class CodeEditor(QPlainTextEdit):
             for _ in range(remove):
                 cursor.deleteChar()
 
+    # ── Autocomplete helpers ─────────────────────────────────────
+
     def _insert_completion(self, text: str) -> None:
+        """Insert the chosen completion text at the cursor."""
         if not text:
             return
         cursor = self.textCursor()
@@ -326,13 +383,15 @@ class CodeEditor(QPlainTextEdit):
         self.clear_autocomplete()
 
     def _accept_autocomplete(self) -> None:
+        """Accept the current ghost-text suggestion."""
         if not self._ghost_text:
             return
         self._insert_completion(self._ghost_text)
 
     def set_autocomplete_suggestion(self, text: str) -> None:
+        """Show *text* as a ghost-text suggestion and open the popup."""
         self._ghost_text = text
-        self.viewport().update()
+        self.viewport().update()  # Trigger repaint to draw ghost text
         if text:
             self._completion_model.setStringList([text])
             self._completer.setCompletionPrefix("")
@@ -341,17 +400,21 @@ class CodeEditor(QPlainTextEdit):
             self._completer.popup().hide()
 
     def clear_autocomplete(self) -> None:
+        """Remove ghost-text overlay and hide the popup."""
         if not self._ghost_text:
             return
         self._ghost_text = ""
         self.viewport().update()
         self._completer.popup().hide()
 
+    # ── Status & theme ───────────────────────────────────────────
+
     def set_status_message(self, message: str) -> None:
+        """Emit a status-bar message (forwarded to MainWindow)."""
         self.status_message.emit(message)
 
     def apply_theme(self) -> None:
-        """Apply current theme colors."""
+        """Apply current theme colors to the editor and gutter."""
         colors = self._theme.get_colors()
         self.setStyleSheet(f"""
             QPlainTextEdit {{

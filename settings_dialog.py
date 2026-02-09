@@ -1,4 +1,11 @@
-"""Settings dialog for the editor."""
+"""Settings dialog for the editor.
+
+A tabbed QDialog that lets the user configure:
+- Editor: font, indentation, line numbers
+- Appearance: color theme (auto / dark / light)
+- Files: trailing whitespace trimming
+- Autocomplete: model path, device, sampling parameters
+"""
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QSpinBox, QComboBox, QCheckBox, QPushButton,
@@ -12,7 +19,12 @@ from config import Config
 
 
 class SettingsDialog(QDialog):
-    """Settings dialog with tabs for different categories."""
+    """Modal dialog with tabs for different setting categories.
+
+    Signals:
+        settings_changed: Emitted after the user clicks OK or Apply,
+            so the main window can refresh its state.
+    """
 
     settings_changed = Signal()
 
@@ -20,6 +32,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self._config = config
         self._theme = theme_manager
+        # Keep dialog themed when the user toggles dark/light
         self._theme.theme_changed.connect(self._apply_theme)
         self.setWindowTitle('Settings')
         self.setMinimumWidth(400)
@@ -27,10 +40,13 @@ class SettingsDialog(QDialog):
         self._load_settings()
         self._apply_theme(self._theme.get_theme())
 
+    # ── UI construction ──────────────────────────────────────────
+
     def _setup_ui(self) -> None:
+        """Build tabs and OK / Cancel / Apply buttons."""
         layout = QVBoxLayout(self)
 
-        # Tab widget
+        # Tab widget with one tab per settings category
         tabs = QTabWidget()
         tabs.addTab(self._create_editor_tab(), 'Editor')
         tabs.addTab(self._create_appearance_tab(), 'Appearance')
@@ -38,7 +54,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._create_autocomplete_tab(), 'Autocomplete')
         layout.addWidget(tabs)
 
-        # Buttons
+        # Bottom button row
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -56,11 +72,14 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+    # ── Tab builders ─────────────────────────────────────────────
+
     def _create_editor_tab(self) -> QWidget:
+        """Build the Editor tab: font, indentation, display options."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # Font group
+        # -- Font group --
         font_group = QGroupBox('Font')
         font_layout = QFormLayout(font_group)
 
@@ -75,7 +94,7 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(font_group)
 
-        # Indentation group
+        # -- Indentation group --
         indent_group = QGroupBox('Indentation')
         indent_layout = QFormLayout(indent_group)
 
@@ -90,7 +109,7 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(indent_group)
 
-        # Display group
+        # -- Display group --
         display_group = QGroupBox('Display')
         display_layout = QFormLayout(display_group)
 
@@ -104,6 +123,7 @@ class SettingsDialog(QDialog):
         return widget
 
     def _create_appearance_tab(self) -> QWidget:
+        """Build the Appearance tab: theme selector."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
@@ -114,6 +134,7 @@ class SettingsDialog(QDialog):
         self._theme_combo.addItem('Auto (follow system)', 'auto')
         self._theme_combo.addItem('Dark', 'dark')
         self._theme_combo.addItem('Light', 'light')
+        # Select the currently saved theme
         current = self._config.theme
         idx = self._theme_combo.findData(current)
         if idx >= 0:
@@ -126,6 +147,7 @@ class SettingsDialog(QDialog):
         return widget
 
     def _create_files_tab(self) -> QWidget:
+        """Build the Files tab: save-related options."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
@@ -142,16 +164,19 @@ class SettingsDialog(QDialog):
         return widget
 
     def _create_autocomplete_tab(self) -> QWidget:
+        """Build the Autocomplete tab: model, device, and sampling settings."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
         ac_group = QGroupBox('Autocomplete')
         ac_layout = QFormLayout(ac_group)
 
+        # Enable / disable toggle
         self._ac_enabled = QCheckBox('Enable autocomplete')
         self._ac_enabled.setChecked(self._config.autocomplete_enabled)
         ac_layout.addRow(self._ac_enabled)
 
+        # Model directory with browse button
         model_row = QHBoxLayout()
         self._ac_model_dir = QLineEdit(self._config.autocomplete_model_dir)
         browse_btn = QPushButton('Browse...')
@@ -160,6 +185,7 @@ class SettingsDialog(QDialog):
         model_row.addWidget(browse_btn)
         ac_layout.addRow('Model folder:', model_row)
 
+        # Device selector
         self._ac_device = QComboBox()
         self._ac_device.addItem('Auto', 'auto')
         self._ac_device.addItem('CPU', 'cpu')
@@ -169,6 +195,7 @@ class SettingsDialog(QDialog):
             self._ac_device.setCurrentIndex(device_idx)
         ac_layout.addRow('Device:', self._ac_device)
 
+        # Generation parameters
         self._ac_max_tokens = QSpinBox()
         self._ac_max_tokens.setRange(1, 128)
         self._ac_max_tokens.setValue(self._config.autocomplete_max_new_tokens)
@@ -188,6 +215,7 @@ class SettingsDialog(QDialog):
         )
         ac_layout.addRow('Context chars:', self._ac_context_chars)
 
+        # Sampling parameters
         self._ac_temperature = QDoubleSpinBox()
         self._ac_temperature.setRange(0.0, 2.0)
         self._ac_temperature.setSingleStep(0.05)
@@ -200,11 +228,13 @@ class SettingsDialog(QDialog):
         self._ac_top_p.setValue(self._config.autocomplete_top_p)
         ac_layout.addRow('Top-p:', self._ac_top_p)
 
+        # Debounce delay
         self._ac_debounce = QSpinBox()
         self._ac_debounce.setRange(0, 1000)
         self._ac_debounce.setValue(self._config.autocomplete_debounce_ms)
         ac_layout.addRow('Debounce (ms):', self._ac_debounce)
 
+        # Behavior toggles
         self._ac_allow_strings = QCheckBox('Allow suggestions in strings/comments')
         self._ac_allow_strings.setChecked(
             self._config.autocomplete_allow_in_strings
@@ -221,17 +251,21 @@ class SettingsDialog(QDialog):
         return widget
 
     def _browse_model_dir(self) -> None:
+        """Open a folder picker for the autocomplete model directory."""
         path = QFileDialog.getExistingDirectory(
             self, 'Select Model Folder', self._ac_model_dir.text()
         )
         if path:
             self._ac_model_dir.setText(path)
 
+    # ── Settings persistence ─────────────────────────────────────
+
     def _load_settings(self) -> None:
-        """Load current settings into UI."""
-        pass  # Already done in _setup_ui
+        """Load current settings into UI widgets (already done in tab builders)."""
+        pass
 
     def _apply_theme(self, _: str) -> None:
+        """Re-style the dialog to match the active theme."""
         colors = self._theme.get_colors()
         self.setStyleSheet(f"""
             QDialog {{
@@ -291,7 +325,8 @@ class SettingsDialog(QDialog):
         """)
 
     def _apply_settings(self) -> None:
-        """Apply settings without closing."""
+        """Read all UI widgets and write values to Config, then save."""
+        # Editor settings
         self._config.set('editor', 'font_family',
                          self._font_combo.currentFont().family())
         self._config.set('editor', 'font_size', self._font_size.value())
@@ -299,10 +334,13 @@ class SettingsDialog(QDialog):
         self._config.set('editor', 'use_spaces', self._use_spaces.isChecked())
         self._config.set('editor', 'show_line_numbers',
                          self._show_line_numbers.isChecked())
+        # Appearance
         self._config.set('appearance', 'theme',
                          self._theme_combo.currentData())
+        # Files
         self._config.set('files', 'trim_whitespace',
                          self._trim_whitespace.isChecked())
+        # Autocomplete
         self._config.set('autocomplete', 'enabled',
                          self._ac_enabled.isChecked())
         self._config.set('autocomplete', 'model_dir',
@@ -325,10 +363,11 @@ class SettingsDialog(QDialog):
                          self._ac_allow_strings.isChecked())
         self._config.set('autocomplete', 'llm_first',
                          self._ac_llm_first.isChecked())
+        # Persist and notify
         self._config.save()
         self.settings_changed.emit()
 
     def _save_and_close(self) -> None:
-        """Save settings and close dialog."""
+        """Apply settings and close the dialog."""
         self._apply_settings()
         self.accept()

@@ -1,29 +1,40 @@
-"""Theme management with Windows dark/light mode detection."""
+"""Theme management with Windows dark/light mode detection.
+
+Provides a ThemeManager that:
+- Auto-detects Windows app theme via the registry
+- Holds dark and light color palettes (VS Code-inspired)
+- Emits a signal when the active theme changes
+"""
 import sys
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QColor
 
+# Windows registry access (only imported on win32)
 if sys.platform == 'win32':
     import winreg
 
 
+# ── Color palettes ───────────────────────────────────────────────
+# Each dict maps semantic names to hex color strings.
+# Keys are referenced by the editor, gutter, and syntax highlighter.
+
 DARK_COLORS = {
-    'editor_bg': '#1e1e1e',
-    'editor_fg': '#d4d4d4',
-    'gutter_bg': '#252526',
-    'line_number': '#858585',
-    'current_line': '#2d2d30',
-    'selection': '#264f78',
-    'keyword': '#569cd6',
-    'comment': '#6a9955',
-    'string': '#ce9178',
-    'operator': '#d4d4d4',
-    'function': '#dcdcaa',
-    'class': '#4ec9b0',
-    'builtin': '#c586c0',
-    'variable': '#9cdcfe',
-    'text': '#d4d4d4',
-    'ghost_text': '#6f6f6f',
+    'editor_bg': '#1e1e1e',       # Editor background
+    'editor_fg': '#d4d4d4',       # Default text color
+    'gutter_bg': '#252526',       # Line-number gutter background
+    'line_number': '#858585',     # Line-number text color
+    'current_line': '#2d2d30',    # Current-line highlight
+    'selection': '#264f78',       # Selection background
+    'keyword': '#569cd6',         # Keywords (if, def, class, ...)
+    'comment': '#6a9955',         # Comments
+    'string': '#ce9178',          # String literals
+    'operator': '#d4d4d4',        # Operators (+, -, =, ...)
+    'function': '#dcdcaa',        # Function names
+    'class': '#4ec9b0',           # Class names
+    'builtin': '#c586c0',         # Built-in names (print, len, ...)
+    'variable': '#9cdcfe',        # Variable names
+    'text': '#d4d4d4',            # Generic text
+    'ghost_text': '#6f6f6f',      # Autocomplete ghost overlay
 }
 
 LIGHT_COLORS = {
@@ -47,16 +58,26 @@ LIGHT_COLORS = {
 
 
 class ThemeManager(QObject):
-    """Manages theme detection and color schemes."""
+    """Manages the active color theme and notifies listeners on change.
+
+    Signals:
+        theme_changed(str): Emitted with 'dark' or 'light' when the
+            active theme is switched.
+    """
 
     theme_changed = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
+        # Detect the OS preference at startup
         self._theme = self._detect_system_theme()
 
     def _detect_system_theme(self) -> str:
-        """Detect Windows dark/light mode from registry."""
+        """Read the Windows 'AppsUseLightTheme' registry value.
+
+        Returns 'dark' when the value is 0, 'light' otherwise.
+        Falls back to 'light' on non-Windows platforms or errors.
+        """
         if sys.platform != 'win32':
             return 'light'
         try:
@@ -72,25 +93,28 @@ class ThemeManager(QObject):
             return 'light'
 
     def get_theme(self) -> str:
-        """Return current theme name."""
+        """Return the current theme name ('dark' or 'light')."""
         return self._theme
 
     def get_colors(self) -> dict:
-        """Return color dictionary for current theme."""
+        """Return the full color dictionary for the active theme."""
         return DARK_COLORS if self._theme == 'dark' else LIGHT_COLORS
 
     def get_color(self, key: str) -> QColor:
-        """Return QColor for a color key."""
+        """Return a QColor for a single semantic color *key*."""
         return QColor(self.get_colors().get(key, '#000000'))
 
     def set_theme(self, theme: str) -> None:
-        """Manually set theme."""
+        """Manually switch to *theme* ('dark' or 'light').
+
+        Emits theme_changed only when the value actually changes.
+        """
         if theme in ('dark', 'light') and theme != self._theme:
             self._theme = theme
             self.theme_changed.emit(theme)
 
     def refresh(self) -> None:
-        """Re-detect system theme and emit if changed."""
+        """Re-detect system theme and emit if it changed."""
         new_theme = self._detect_system_theme()
         if new_theme != self._theme:
             self._theme = new_theme
