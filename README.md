@@ -1,4 +1,4 @@
-# Python Syntax Highlighter
+# PyGlow
 
 Minimal Python code editor with syntax highlighting and local autocomplete.
 Built with **PySide6** and **Pygments**.
