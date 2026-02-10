@@ -1,49 +1,34 @@
 # Python Syntax Highlighter
 
 Minimal Python code editor with syntax highlighting and local autocomplete.
-Built with **PySide6** for UI and **Pygments** for lexing.
+Built with **PySide6** and **Pygments**.
 
 ## Quick Start
-Install dependencies and run the application. The project ships with a minimal
-`pygments` implementation so tests can run offline. For full highlighting and
-the GUI, install the real packages when network access is available:
 
 ```bash
-pip install PySide6 pygments  # optional
+pip install -r requirements.txt
 python main.py
 ```
 
-## Autocomplete (Local)
-Autocomplete runs locally with a transformers-compatible model placed in
-`model/`. The folder must include weights plus tokenizer/config files.
-
-See:
-- Autocomplete setup: `docs/autocomplete.md`
-- Model variants: `docs/models.md`
-- Guides & troubleshooting: `docs/guides.md`
-
-## Running Tests
-Execute unit tests with:
+Open a file directly from the command line:
 
 ```bash
-python -m unittest discover -s tests
+python main.py script.py
 ```
 
-## Docs
-Build the MkDocs site locally with:
+Or drag and drop a file onto the editor window.
 
-```bash
-pip install mkdocs
-mkdocs build
-```
+## What's Inside
 
-## Release Tags
-Releases are created from Git tags starting with `v` (example: `vA7F3C9`).
-Generate and push a random 6-character tag with:
+- Syntax highlighting, line numbers, bracket matching, auto-close brackets
+- Dark / light themes with Windows auto-detection
+- Find bar, go-to-line, duplicate line, auto-indent
+- Optional local LLM autocomplete (ghost-text suggestions)
+- Persistent settings in `~/.python-highlighter/settings.json`
 
-```powershell
-.\scripts\new_random_tag.bat
-```
+## Learn More
 
-The script stores the title/description as an annotated tag, pushes the tag to
-`origin`, and can optionally push the current branch.
+- [Features & Shortcuts](features.md) — full feature list and keyboard shortcuts
+- [Autocomplete Setup](autocomplete.md) — how to set up local model autocomplete
+- [Model Variants](models.md) — choosing the right model size
+- [Guides & Troubleshooting](guides.md) — configuration, performance tuning, common errors

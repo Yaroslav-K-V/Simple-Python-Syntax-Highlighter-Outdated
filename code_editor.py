@@ -18,6 +18,8 @@ from PySide6.QtGui import (
 BRACKETS = {'(': ')', '[': ']', '{': '}'}
 # Reverse map: close bracket -> open bracket
 BRACKETS_CLOSE = {v: k for k, v in BRACKETS.items()}
+# Auto-close pairs: typing the key inserts both key + value
+AUTO_CLOSE = {'(': ')', '[': ']', '{': '}', '"': '"', "'": "'"}
 
 
 class LineNumberArea(QWidget):
@@ -220,8 +222,7 @@ class CodeEditor(QPlainTextEdit):
         # Add highlight selections for both brackets
         selections = self.extraSelections()
         fmt = QTextCharFormat()
-        fmt.setBackground(QColor('#ffff00' if self._theme.get_theme() == 'light'
-                                  else '#3a3a00'))
+        fmt.setBackground(self._theme.get_color('bracket_match'))
 
         for p in [bracket_pos, match_pos]:
             sel = QTextEdit.ExtraSelection()
@@ -308,6 +309,47 @@ class CodeEditor(QPlainTextEdit):
             self._handle_backtab()
             return
 
+        # --- Ctrl+D: duplicate current line ---
+        if event.key() == Qt.Key_D and event.modifiers() == Qt.ControlModifier:
+            self._duplicate_line()
+            return
+
+        # --- Auto-close brackets and quotes ---
+        ch = event.text()
+        if ch in AUTO_CLOSE:
+            cursor = self.textCursor()
+            closing = AUTO_CLOSE[ch]
+            # For quotes, skip auto-close if already inside the same quote
+            if ch in ('"', "'"):
+                line = cursor.block().text()
+                col = cursor.columnNumber()
+                # Count how many of this quote appear before the cursor
+                if line[:col].count(ch) % 2 == 1:
+                    super().keyPressEvent(event)
+                    return
+            # If next char is already the closing char, just move past it
+            pos = cursor.position()
+            text = self.document().toPlainText()
+            if pos < len(text) and text[pos] == closing and ch == closing:
+                cursor.movePosition(QTextCursor.MoveOperation.Right)
+                self.setTextCursor(cursor)
+                return
+            # Insert pair and place cursor between them
+            cursor.insertText(ch + closing)
+            cursor.movePosition(QTextCursor.MoveOperation.Left)
+            self.setTextCursor(cursor)
+            return
+
+        # --- Skip over closing bracket if typed manually ---
+        if ch in BRACKETS_CLOSE or ch in ('"', "'"):
+            cursor = self.textCursor()
+            pos = cursor.position()
+            text = self.document().toPlainText()
+            if pos < len(text) and text[pos] == ch:
+                cursor.movePosition(QTextCursor.MoveOperation.Right)
+                self.setTextCursor(cursor)
+                return
+
         super().keyPressEvent(event)
 
     def _handle_newline(self) -> None:
@@ -346,6 +388,16 @@ class CodeEditor(QPlainTextEdit):
             cursor.insertText(' ' * self._tab_size)
         else:
             cursor.insertText('\t')
+
+    def _duplicate_line(self) -> None:
+        """Duplicate the current line (Ctrl+D)."""
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                            QTextCursor.MoveMode.KeepAnchor)
+        line_text = cursor.selectedText()
+        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        cursor.insertText('\n' + line_text)
 
     def _handle_backtab(self) -> None:
         """Remove one indent level from the start of the current line."""

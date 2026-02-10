@@ -35,6 +35,7 @@ DARK_COLORS = {
     'variable': '#9cdcfe',        # Variable names
     'text': '#d4d4d4',            # Generic text
     'ghost_text': '#6f6f6f',      # Autocomplete ghost overlay
+    'bracket_match': '#c8c800',   # Matching bracket highlight
 }
 
 LIGHT_COLORS = {
@@ -54,6 +55,7 @@ LIGHT_COLORS = {
     'variable': '#001080',
     'text': '#000000',
     'ghost_text': '#a0a0a0',
+    'bracket_match': '#ffff00',   # Matching bracket highlight
 }
 
 

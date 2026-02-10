@@ -23,7 +23,10 @@ from code_editor import CodeEditor
 from highlighter import Highlighter
 from find_bar import FindBar
 from settings_dialog import SettingsDialog
-from autocomplete import AutocompleteController
+try:
+    from autocomplete import AutocompleteController
+except ImportError:
+    AutocompleteController = None
 
 
 class MainWindow(QMainWindow):
@@ -68,8 +71,13 @@ class MainWindow(QMainWindow):
 
         # Syntax highlighter attached to the editor's document
         self._highlighter = Highlighter(self._editor.document(), self._theme)
-        # LLM-based autocomplete controller
-        self._autocomplete = AutocompleteController(self._editor, self._config)
+        # LLM-based autocomplete controller (optional — works without torch)
+        self._autocomplete = None
+        if AutocompleteController is not None:
+            try:
+                self._autocomplete = AutocompleteController(self._editor, self._config)
+            except Exception:
+                pass
 
         # Build UI chrome
         self._setup_menus()
@@ -255,7 +263,8 @@ class MainWindow(QMainWindow):
             self._theme.set_theme(self._config.theme)
         else:
             self._theme.refresh()  # Re-detect OS theme
-        self._autocomplete.reload_settings()
+        if self._autocomplete:
+            self._autocomplete.reload_settings()
 
     # ── Cursor / status updates ──────────────────────────────────
 
@@ -358,24 +367,33 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Error', f'Failed to read: {e}')
 
     @Slot()
-    def _save_file(self) -> None:
-        """Save to the current path, or prompt Save As if untitled."""
+    def _save_file(self) -> bool:
+        """Save to the current path, or prompt Save As if untitled.
+
+        Returns True on success, False on error or cancel.
+        """
         if self._file:
-            self._write_file(self._file)
-        else:
-            self._save_file_as()
+            return self._write_file(self._file)
+        return self._save_file_as()
 
     @Slot()
-    def _save_file_as(self) -> None:
-        """Prompt for a new file path and save."""
+    def _save_file_as(self) -> bool:
+        """Prompt for a new file path and save.
+
+        Returns True on success, False on error or cancel.
+        """
         path, _ = QFileDialog.getSaveFileName(
             self, 'Save File', '', 'Python Files (*.py);;All Files (*)'
         )
         if path:
-            self._write_file(path)
+            return self._write_file(path)
+        return False
 
-    def _write_file(self, path: str) -> None:
-        """Write editor contents to *path*, optionally trimming whitespace."""
+    def _write_file(self, path: str) -> bool:
+        """Write editor contents to *path*, optionally trimming whitespace.
+
+        Returns True on success, False on I/O error.
+        """
         try:
             text = self._editor.toPlainText()
             # Strip trailing whitespace per line if configured
@@ -390,10 +408,13 @@ class MainWindow(QMainWindow):
             # Remember this file for next launch
             self._config.set('files', 'last_opened', path)
             self._config.save()
+            return True
         except PermissionError:
             QMessageBox.critical(self, 'Error', f'Permission denied: {path}')
+            return False
         except OSError as e:
             QMessageBox.critical(self, 'Error', f'Failed to save: {e}')
+            return False
 
     # ── Window title ─────────────────────────────────────────────
 

@@ -1,69 +1,59 @@
 # Python Syntax Highlighter
 
 Minimal Python code editor with syntax highlighting and local autocomplete.
-Built with **PySide6** for UI and **Pygments** for lexing.
+Built with **PySide6** and **Pygments**.
+
+## Features
+
+- Syntax highlighting (Pygments), line numbers, current line highlight
+- Bracket matching and auto-close for `()`, `[]`, `{}`, `""`, `''`
+- Auto-indent, duplicate line (Ctrl+D)
+- Find bar (Ctrl+F) with case sensitivity, go-to-line (Ctrl+G)
+- Dark / light themes with Windows auto-detection
+- Drag & drop file opening, CLI argument support, last file restore
+- Optional local LLM autocomplete with ghost-text suggestions
+- Persistent settings via `~/.python-highlighter/settings.json`
 
 ## Quick Start
-Install dependencies and run the app. The project ships with a minimal
-`pygments` implementation so tests can run offline. For full highlighting and
-the GUI, install the real packages when network access is available:
 
 ```bash
-pip install PySide6 pygments  # optional
+pip install -r requirements.txt
 python main.py
 ```
 
-## Autocomplete (Local)
-Autocomplete runs locally with a transformers-compatible model in `model/`.
-The folder must include weights plus tokenizer/config files (for example:
-`config.json`, `generation_config.json`, `tokenizer.json`,
-`tokenizer_config.json`, `merges.txt`, `vocab.json`, and a `.safetensors`
-weights file named `model.safetensors`).
+Open a file directly:
 
-Install extra dependencies:
+```bash
+python main.py script.py
+```
+
+## Autocomplete (Optional)
+
+Autocomplete requires extra dependencies and a local model:
 
 ```bash
 pip install torch transformers safetensors
 ```
 
-Open **Settings → Autocomplete**:
-- Enable autocomplete
-- Set **Model folder** (default: `model/`)
-- Choose **Device** (CPU/CUDA/Auto)
-- Tune **Max new tokens**, **Context tokens**, **Debounce**, and
-  **Allow suggestions in strings/comments**
+Place a transformers-compatible model in `model/` and enable it in
+**Settings > Autocomplete**. The editor works normally without these
+dependencies — autocomplete is simply disabled.
 
-CPU is supported but slower; reduce "Max new tokens" and increase "Debounce"
-if suggestions feel laggy.
+See the [docs](docs/) for detailed setup and model selection guidance.
 
-Autocomplete is hybrid:
-- Fast symbol completions from the current file, Python keywords, and builtins
-- LLM completion only when no symbol suggestion is available
+## Documentation
 
-## Running Tests
-Execute unit tests with:
+Build the MkDocs site locally:
 
 ```bash
-python -m unittest discover -s tests
-```
-
-## Docs
-Build the MkDocs site locally with:
-
-```bash
-pip install mkdocs
-mkdocs build
+pip install mkdocs mkdocs-material
+mkdocs serve
 ```
 
 ## Release Tags
-Releases are created from Git tags starting with `v` (example: `vA7F3C9`).
-Generate and push a random 6-character tag with:
+
+Generate and push a random release tag:
 
 ```powershell
 .\scripts\new_random_tag.bat
 ```
-
-The script:
-- Prompts for a title and description (saved in an annotated tag).
-- Pushes the tag to `origin`.
-- Optionally pushes the current branch (`git push -u origin <branch>`).

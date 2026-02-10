@@ -1,9 +1,25 @@
 site_name: Python Syntax Highlighter
-site_description: Minimal documentation for the Python Syntax Highlighter project.
+site_description: Minimal Python code editor with syntax highlighting and local autocomplete.
 docs_dir: docs
 site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue grey
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - scheme: slate
+      primary: blue grey
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+
 nav:
   - Home: index.md
+  - Features: features.md
   - Autocomplete: autocomplete.md
   - Model Variants: models.md
   - Guides: guides.md
