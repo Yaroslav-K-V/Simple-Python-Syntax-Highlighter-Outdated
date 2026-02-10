@@ -1,4 +1,4 @@
-# Python Syntax Highlighter
+# PyGlow
 
 Minimal Python code editor with syntax highlighting and local autocomplete.
 Built with **PySide6** and **Pygments**.
@@ -12,7 +12,7 @@ Built with **PySide6** and **Pygments**.
 - Dark / light themes with Windows auto-detection
 - Drag & drop file opening, CLI argument support, last file restore
 - Optional local LLM autocomplete with ghost-text suggestions
-- Persistent settings via `~/.python-highlighter/settings.json`
+- Persistent settings via `~/.pyglow/settings.json`
 
 ## Quick Start
 

@@ -38,7 +38,7 @@
 
 ## Settings
 
-Persistent settings stored in `~/.python-highlighter/settings.json`.
+Persistent settings stored in `~/.pyglow/settings.json`.
 Configurable via **View > Settings** dialog:
 
 - Font family and size

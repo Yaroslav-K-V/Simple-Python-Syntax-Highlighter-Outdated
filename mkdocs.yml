@@ -1,4 +1,4 @@
-site_name: Python Syntax Highlighter
+site_name: PyGlow
 site_description: Minimal Python code editor with syntax highlighting and local autocomplete.
 docs_dir: docs
 site_dir: site

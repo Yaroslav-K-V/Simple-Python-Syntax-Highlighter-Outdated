@@ -1,6 +1,6 @@
 """Configuration management for the editor.
 
-Persists user settings as JSON in ~/.python-highlighter/settings.json.
+Persists user settings as JSON in ~/.pyglow/settings.json.
 Missing keys are automatically filled from DEFAULT_CONFIG on load.
 """
 import json
@@ -47,12 +47,12 @@ DEFAULT_CONFIG = {
 class Config:
     """Manages reading, writing, and accessing application settings.
 
-    Settings are stored in ``~/.python-highlighter/settings.json``.
+    Settings are stored in ``~/.pyglow/settings.json``.
     On first run the file does not exist and all defaults apply.
     """
 
     def __init__(self) -> None:
-        self._config_dir = Path.home() / '.python-highlighter'
+        self._config_dir = Path.home() / '.pyglow'
         self._config_file = self._config_dir / 'settings.json'
         self._data: dict = {}
         self._load()

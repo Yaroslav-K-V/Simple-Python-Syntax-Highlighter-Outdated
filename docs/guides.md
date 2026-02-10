@@ -2,7 +2,7 @@
 
 ## Configuration
 
-Settings are stored in `~/.python-highlighter/settings.json` and created
+Settings are stored in `~/.pyglow/settings.json` and created
 automatically on first run. You can edit them through **View > Settings** or
 manually in the JSON file.
 

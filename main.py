@@ -1,6 +1,6 @@
 """Main application window.
 
-Entry point for the Python Syntax Highlighter.  Creates a QMainWindow
+Entry point for PyGlow.  Creates a QMainWindow
 with menu bar, status bar, code editor, find bar, and syntax
 highlighting.  Supports open/save, find & go-to-line, theme switching,
 and a settings dialog.
@@ -419,10 +419,10 @@ class MainWindow(QMainWindow):
     # ── Window title ─────────────────────────────────────────────
 
     def _update_title(self) -> None:
-        """Set the window title to 'filename* - Python Syntax Highlighter'."""
+        """Set the window title to 'filename* - PyGlow'."""
         name = os.path.basename(self._file) if self._file else 'Untitled'
         mod = '*' if self._unsaved else ''
-        self.setWindowTitle(f'{name}{mod} - Python Syntax Highlighter')
+        self.setWindowTitle(f'{name}{mod} - PyGlow')
 
     @Slot()
     def _mark_unsaved(self) -> None:
