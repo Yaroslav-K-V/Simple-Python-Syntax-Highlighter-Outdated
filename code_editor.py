@@ -477,3 +477,8 @@ class CodeEditor(QPlainTextEdit):
         """)
         self._highlight_current_line()
         self._line_area.update()
+
+    def refresh_metrics(self) -> None:
+        """Recalculate gutter width after font or layout changes."""
+        self._update_width(0)
+        self._line_area.update()

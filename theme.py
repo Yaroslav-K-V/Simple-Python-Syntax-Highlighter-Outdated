@@ -36,6 +36,8 @@ DARK_COLORS = {
     'text': '#d4d4d4',            # Generic text
     'ghost_text': '#6f6f6f',      # Autocomplete ghost overlay
     'bracket_match': '#c8c800',   # Matching bracket highlight
+    'find_match': '#c8c800',      # Find highlight
+    'accent': '#4fc1ff',          # UI accent (labels, emphasis)
 }
 
 LIGHT_COLORS = {
@@ -56,6 +58,8 @@ LIGHT_COLORS = {
     'text': '#000000',
     'ghost_text': '#a0a0a0',
     'bracket_match': '#ffff00',   # Matching bracket highlight
+    'find_match': '#fff2a8',      # Find highlight
+    'accent': '#0066bf',          # UI accent (labels, emphasis)
 }
 
 

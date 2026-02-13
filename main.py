@@ -44,6 +44,8 @@ class MainWindow(QMainWindow):
         self._config = Config()
         self._theme = ThemeManager()
         self._theme.theme_changed.connect(self._apply_theme)
+        self._base_font_size = self._config.font_size
+        self._current_font_size = self._config.font_size
 
         # Override auto-detected theme if the user chose a fixed one
         if self._config.theme != 'auto':
@@ -64,7 +66,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._editor)
 
         # Find bar (hidden by default, shown via Ctrl+F)
-        self._find_bar = FindBar(self._editor, self)
+        self._find_bar = FindBar(self._editor, self._theme, self)
         layout.addWidget(self._find_bar)
 
         self.setCentralWidget(container)
@@ -94,8 +96,10 @@ class MainWindow(QMainWindow):
 
     def _apply_font(self) -> None:
         """Set the editor font from config (family + size)."""
-        font = QFont(self._config.font_family, self._config.font_size)
+        font = QFont(self._config.font_family, self._current_font_size)
         self._editor.setFont(font)
+        self._editor.refresh_metrics()
+        self._update_font_label()
 
     # ── Menu bar ─────────────────────────────────────────────────
 
@@ -206,19 +210,24 @@ class MainWindow(QMainWindow):
         """Register global keyboard shortcuts (F3, Shift+F3)."""
         QShortcut(QKeySequence('F3'), self, self._find_bar.find_next)
         QShortcut(QKeySequence('Shift+F3'), self, self._find_bar.find_prev)
+        QShortcut(QKeySequence.ZoomIn, self, lambda: self._change_font_size(1))
+        QShortcut(QKeySequence.ZoomOut, self, lambda: self._change_font_size(-1))
+        QShortcut(QKeySequence('Ctrl+0'), self, self._reset_font_size)
 
     # ── Status bar ───────────────────────────────────────────────
 
     def _setup_status_bar(self) -> None:
-        """Create status bar with cursor position, encoding, and line count."""
+        """Create status bar with cursor position, font size, encoding, and line count."""
         status = QStatusBar()
         self.setStatusBar(status)
 
         self._pos_label = QLabel('Ln 1, Col 1')       # Cursor position
+        self._font_label = QLabel(f'Font {self._current_font_size}pt')  # Font size
         self._enc_label = QLabel('UTF-8')              # File encoding
         self._lines_label = QLabel('1 lines')          # Total line count
 
         status.addPermanentWidget(self._pos_label)
+        status.addPermanentWidget(self._font_label)
         status.addPermanentWidget(self._enc_label)
         status.addPermanentWidget(self._lines_label)
 
@@ -258,6 +267,8 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_settings_changed(self) -> None:
         """Re-apply font, theme, and autocomplete settings after changes."""
+        self._base_font_size = self._config.font_size
+        self._current_font_size = self._config.font_size
         self._apply_font()
         if self._config.theme != 'auto':
             self._theme.set_theme(self._config.theme)
@@ -276,6 +287,26 @@ class MainWindow(QMainWindow):
         col = cursor.columnNumber() + 1
         self._pos_label.setText(f'Ln {ln}, Col {col}')
         self._lines_label.setText(f'{self._editor.blockCount()} lines')
+
+    def _update_font_label(self) -> None:
+        """Refresh the font size readout in the status bar."""
+        if hasattr(self, "_font_label"):
+            self._font_label.setText(f'Font {self._current_font_size}pt')
+
+    def _change_font_size(self, delta: int) -> None:
+        """Increase or decrease editor font size."""
+        new_size = max(6, min(72, self._current_font_size + delta))
+        if new_size == self._current_font_size:
+            return
+        self._current_font_size = new_size
+        self._apply_font()
+
+    def _reset_font_size(self) -> None:
+        """Reset editor font size to the configured base size."""
+        if self._current_font_size == self._base_font_size:
+            return
+        self._current_font_size = self._base_font_size
+        self._apply_font()
 
     # ── Theme ────────────────────────────────────────────────────
 
