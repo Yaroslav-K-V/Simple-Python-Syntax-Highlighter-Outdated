@@ -38,8 +38,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: /var/cache/apt
-        key: ${{ runner.os }}-apt-libegl1
+        key: ${{ runner.os }}-apt-libegl1-v1
         restore-keys: |
+          ${{ runner.os }}-apt-libegl1-
           ${{ runner.os }}-apt-
 
     - name: Install system dependencies (Qt/OpenGL)
