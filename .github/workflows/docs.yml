@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build-docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -26,6 +27,14 @@ jobs:
       with:
         python-version: "3.12"
         cache: pip
+
+    - name: Cache MkDocs dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-mkdocs-${{ hashFiles('.github/workflows/docs.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-mkdocs-
 
     - name: Install MkDocs
       run: pip install mkdocs mkdocs-material
@@ -41,6 +50,7 @@ jobs:
   deploy:
     needs: build-docs
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
