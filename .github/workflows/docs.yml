@@ -28,14 +28,6 @@ jobs:
         python-version: "3.12"
         cache: pip
 
-    - name: Cache MkDocs dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-mkdocs-${{ hashFiles('.github/workflows/docs.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-mkdocs-
-
     - name: Install MkDocs
       run: pip install mkdocs mkdocs-material
 
