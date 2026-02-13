@@ -17,6 +17,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -31,16 +32,26 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         cache: pip
+        cache-dependency-path: requirements.txt
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt
+        key: ${{ runner.os }}-apt-libegl1-v1
+        restore-keys: |
+          ${{ runner.os }}-apt-libegl1-
+          ${{ runner.os }}-apt-
 
     - name: Install system dependencies (Qt/OpenGL)
       run: |
         sudo apt-get update
         sudo apt-get install -y libegl1
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
     - name: Check syntax
       run: |
