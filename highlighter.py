@@ -4,8 +4,7 @@ Uses Pygments to tokenize Python code and maps tokens to Qt text
 formats (colors, bold, italic) defined by the current color theme.
 
 Architecture:
-    Lexer   -> wraps Pygments PythonLexer, produces (Token, str) pairs
-    Parser  -> pass-through (placeholder for future transforms)
+    Lexer       -> wraps Pygments PythonLexer, produces (Token, str) pairs
     Highlighter -> QSyntaxHighlighter that applies formats per token
 """
 from __future__ import annotations
@@ -28,19 +27,6 @@ class Lexer:
     def get_tokens(self, text: str) -> List[Tuple[Token, str]]:
         """Tokenize *text* and return a list of (Token, str) pairs."""
         return list(lex(text, self._lexer))
-
-
-class Parser:
-    """Trivial parser that returns tokens unchanged.
-
-    Exists as a hook for future AST-level transforms or filtering.
-    """
-
-    def parse(
-        self, tokens: List[Tuple[Token, str]]
-    ) -> List[Tuple[Token, str]]:
-        """Return tokens as-is (no transformation)."""
-        return tokens
 
 
 class Highlighter(QSyntaxHighlighter):
@@ -67,7 +53,6 @@ class Highlighter(QSyntaxHighlighter):
         super().__init__(document)
         self._theme = theme_manager
         self._lexer = Lexer()
-        self._parser = Parser()
         self._formats: Dict[Token, QTextCharFormat] = {}
         self._rebuild_formats()
         # Re-highlight when theme changes
@@ -97,7 +82,7 @@ class Highlighter(QSyntaxHighlighter):
         crashing the editor on incomplete or malformed code.
         """
         try:
-            tokens = self._parser.parse(self._lexer.get_tokens(text))
+            tokens = self._lexer.get_tokens(text)
         except Exception:
             return  # Skip highlighting on tokenization errors
 

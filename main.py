@@ -2,8 +2,8 @@
 
 Entry point for PyGlow.  Creates a QMainWindow
 with menu bar, status bar, code editor, find bar, and syntax
-highlighting.  Supports open/save, find & go-to-line, theme switching,
-and a settings dialog.
+highlighting.  Supports open/save, find & replace, go-to-line,
+theme switching, and a settings dialog.
 """
 import sys
 import os
@@ -15,7 +15,7 @@ from PySide6.QtGui import (
     QAction, QKeySequence, QFont, QShortcut, QTextCursor,
     QDragEnterEvent, QDropEvent,
 )
-from PySide6.QtCore import Slot, QUrl
+from PySide6.QtCore import Slot
 
 from config import Config
 from theme import ThemeManager
@@ -43,7 +43,6 @@ class MainWindow(QMainWindow):
         # Load persistent settings and detect OS theme
         self._config = Config()
         self._theme = ThemeManager()
-        self._theme.theme_changed.connect(self._apply_theme)
         self._base_font_size = self._config.font_size
         self._current_font_size = self._config.font_size
 
@@ -87,6 +86,8 @@ class MainWindow(QMainWindow):
         self._setup_status_bar()
         # Forward editor status messages to the status bar
         self._editor.status_message.connect(self.statusBar().showMessage)
+        # Connect theme changes after all widgets exist
+        self._theme.theme_changed.connect(self._apply_theme)
         self._apply_theme(self._theme.get_theme())
         self._update_title()
         self.resize(800, 600)
@@ -103,83 +104,42 @@ class MainWindow(QMainWindow):
 
     # ── Menu bar ─────────────────────────────────────────────────
 
+    @staticmethod
+    def _add_action(menu, text, handler, shortcut=None) -> QAction:
+        """Create a QAction, attach it to *menu*, and return it."""
+        act = QAction(text, menu)
+        if shortcut is not None:
+            act.setShortcut(shortcut)
+        act.triggered.connect(handler)
+        menu.addAction(act)
+        return act
+
     def _setup_menus(self) -> None:
         """Create File, Edit, and View menus with standard shortcuts."""
         menu = self.menuBar()
 
         # -- File menu --
         file_menu = menu.addMenu('&File')
-
-        open_act = QAction('&Open...', self)
-        open_act.setShortcut(QKeySequence.Open)
-        open_act.triggered.connect(self._open_file)
-        file_menu.addAction(open_act)
-
-        save_act = QAction('&Save', self)
-        save_act.setShortcut(QKeySequence.Save)
-        save_act.triggered.connect(self._save_file)
-        file_menu.addAction(save_act)
-
-        save_as_act = QAction('Save &As...', self)
-        save_as_act.setShortcut('Ctrl+Shift+S')
-        save_as_act.triggered.connect(self._save_file_as)
-        file_menu.addAction(save_as_act)
-
+        self._add_action(file_menu, '&Open...', self._open_file, QKeySequence.Open)
+        self._add_action(file_menu, '&Save', self._save_file, QKeySequence.Save)
+        self._add_action(file_menu, 'Save &As...', self._save_file_as, 'Ctrl+Shift+S')
         file_menu.addSeparator()
-
-        exit_act = QAction('E&xit', self)
-        exit_act.setShortcut(QKeySequence.Quit)
-        exit_act.triggered.connect(self.close)
-        file_menu.addAction(exit_act)
+        self._add_action(file_menu, 'E&xit', self.close, QKeySequence.Quit)
 
         # -- Edit menu --
         edit_menu = menu.addMenu('&Edit')
-
-        undo_act = QAction('&Undo', self)
-        undo_act.setShortcut(QKeySequence.Undo)
-        undo_act.triggered.connect(self._editor.undo)
-        edit_menu.addAction(undo_act)
-
-        redo_act = QAction('&Redo', self)
-        redo_act.setShortcut(QKeySequence.Redo)
-        redo_act.triggered.connect(self._editor.redo)
-        edit_menu.addAction(redo_act)
-
+        self._add_action(edit_menu, '&Undo', self._editor.undo, QKeySequence.Undo)
+        self._add_action(edit_menu, '&Redo', self._editor.redo, QKeySequence.Redo)
         edit_menu.addSeparator()
-
-        cut_act = QAction('Cu&t', self)
-        cut_act.setShortcut(QKeySequence.Cut)
-        cut_act.triggered.connect(self._editor.cut)
-        edit_menu.addAction(cut_act)
-
-        copy_act = QAction('&Copy', self)
-        copy_act.setShortcut(QKeySequence.Copy)
-        copy_act.triggered.connect(self._editor.copy)
-        edit_menu.addAction(copy_act)
-
-        paste_act = QAction('&Paste', self)
-        paste_act.setShortcut(QKeySequence.Paste)
-        paste_act.triggered.connect(self._editor.paste)
-        edit_menu.addAction(paste_act)
-
+        self._add_action(edit_menu, 'Cu&t', self._editor.cut, QKeySequence.Cut)
+        self._add_action(edit_menu, '&Copy', self._editor.copy, QKeySequence.Copy)
+        self._add_action(edit_menu, '&Paste', self._editor.paste, QKeySequence.Paste)
         edit_menu.addSeparator()
-
-        find_act = QAction('&Find...', self)
-        find_act.setShortcut(QKeySequence.Find)
-        find_act.triggered.connect(self._show_find)
-        edit_menu.addAction(find_act)
-
-        goto_act = QAction('&Go to Line...', self)
-        goto_act.setShortcut('Ctrl+G')
-        goto_act.triggered.connect(self._goto_line)
-        edit_menu.addAction(goto_act)
-
+        self._add_action(edit_menu, '&Find...', self._show_find, QKeySequence.Find)
+        self._add_action(edit_menu, '&Replace...', self._show_replace, 'Ctrl+H')
+        self._add_action(edit_menu, '&Go to Line...', self._goto_line, 'Ctrl+G')
         edit_menu.addSeparator()
-
-        select_all_act = QAction('Select &All', self)
-        select_all_act.setShortcut(QKeySequence.SelectAll)
-        select_all_act.triggered.connect(self._editor.selectAll)
-        edit_menu.addAction(select_all_act)
+        self._add_action(edit_menu, 'Select &All', self._editor.selectAll, QKeySequence.SelectAll)
 
         # -- View menu --
         view_menu = menu.addMenu('&View')
@@ -197,10 +157,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self._light_act)
 
         view_menu.addSeparator()
-
-        settings_act = QAction('&Settings...', self)
-        settings_act.triggered.connect(self._show_settings)
-        view_menu.addAction(settings_act)
+        self._add_action(view_menu, '&Settings...', self._show_settings)
 
         self._update_theme_checks()
 
@@ -231,12 +188,17 @@ class MainWindow(QMainWindow):
         status.addPermanentWidget(self._enc_label)
         status.addPermanentWidget(self._lines_label)
 
-    # ── Find & Go to Line ────────────────────────────────────────
+    # ── Find & Replace & Go to Line ──────────────────────────────
 
     @Slot()
     def _show_find(self) -> None:
         """Show the find bar (Ctrl+F)."""
         self._find_bar.show_and_focus()
+
+    @Slot()
+    def _show_replace(self) -> None:
+        """Show the find bar with replace row (Ctrl+H)."""
+        self._find_bar.show_and_focus(show_replace=True)
 
     @Slot()
     def _goto_line(self) -> None:
@@ -313,8 +275,6 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _apply_theme(self, _: str) -> None:
         """Apply theme colors to the editor, menus, and status bar."""
-        if not hasattr(self, "_editor"):
-            return  # Guard during __init__ before editor exists
         self._editor.apply_theme()
         self._update_theme_checks()
         colors = self._theme.get_colors()

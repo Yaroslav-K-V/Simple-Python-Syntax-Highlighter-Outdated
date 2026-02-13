@@ -37,7 +37,6 @@ class SettingsDialog(QDialog):
         self.setWindowTitle('Settings')
         self.setMinimumWidth(400)
         self._setup_ui()
-        self._load_settings()
         self._apply_theme(self._theme.get_theme())
 
     # ── UI construction ──────────────────────────────────────────
@@ -259,10 +258,6 @@ class SettingsDialog(QDialog):
             self._ac_model_dir.setText(path)
 
     # ── Settings persistence ─────────────────────────────────────
-
-    def _load_settings(self) -> None:
-        """Load current settings into UI widgets (already done in tab builders)."""
-        pass
 
     def _apply_theme(self, _: str) -> None:
         """Re-style the dialog to match the active theme."""
