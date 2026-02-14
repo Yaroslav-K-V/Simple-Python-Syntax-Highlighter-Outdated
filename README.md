@@ -3,6 +3,8 @@
 Minimal Python code editor with syntax highlighting and local autocomplete.
 Built with **PySide6** and **Pygments**.
 
+![Demo](assets/gif/demo.gif)
+
 ## Features
 
 - Syntax highlighting (Pygments), line numbers, current line highlight
