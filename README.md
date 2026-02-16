@@ -3,7 +3,10 @@
 Minimal Python code editor with syntax highlighting and local autocomplete.
 Built with **PySide6** and **Pygments**.
 
-![Demo](assets/gif/demo.gif)
+<p align="center">
+  <img src="assets/gif/demo.gif" width="480" alt="Demo">
+</p>
+<p align="center"><em>GUI preview: editor layout, syntax highlighting, and theming</em></p>
 
 ## Features
 

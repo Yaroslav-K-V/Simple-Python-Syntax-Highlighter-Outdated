@@ -35,7 +35,7 @@ DARK_COLORS = {
     'variable': '#9cdcfe',        # Variable names
     'text': '#d4d4d4',            # Generic text
     'ghost_text': '#6f6f6f',      # Autocomplete ghost overlay
-    'bracket_match': '#c8c800',   # Matching bracket highlight
+    'bracket_match': '#40264F78',   # Matching bracket highlight (subtle)
     'find_match': '#c8c800',      # Find highlight
     'accent': '#4fc1ff',          # UI accent (labels, emphasis)
 }
@@ -57,7 +57,7 @@ LIGHT_COLORS = {
     'variable': '#001080',
     'text': '#000000',
     'ghost_text': '#a0a0a0',
-    'bracket_match': '#ffff00',   # Matching bracket highlight
+    'bracket_match': '#40ADD6FF',   # Matching bracket highlight (subtle)
     'find_match': '#fff2a8',      # Find highlight
     'accent': '#0066bf',          # UI accent (labels, emphasis)
 }
