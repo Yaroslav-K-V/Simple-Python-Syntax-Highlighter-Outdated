@@ -120,6 +120,7 @@ class MainWindow(QMainWindow):
 
         # -- File menu --
         file_menu = menu.addMenu('&File')
+        self._add_action(file_menu, '&New', self._new_file, QKeySequence.New)
         self._add_action(file_menu, '&Open...', self._open_file, QKeySequence.Open)
         self._add_action(file_menu, '&Save', self._save_file, QKeySequence.Save)
         self._add_action(file_menu, 'Save &As...', self._save_file_as, 'Ctrl+Shift+S')
@@ -326,9 +327,40 @@ class MainWindow(QMainWindow):
 
     # ── File I/O ─────────────────────────────────────────────────
 
+    def _maybe_save_changes(self, message: str) -> bool:
+        """Prompt to save unsaved changes.
+
+        Returns True if it's safe to continue, False if the action should abort.
+        """
+        if not self._unsaved:
+            return True
+        reply = QMessageBox.question(
+            self, 'Unsaved Changes',
+            message,
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
+        )
+        if reply == QMessageBox.Save:
+            return self._save_file()
+        if reply == QMessageBox.Cancel:
+            return False
+        return True
+
+    @Slot()
+    def _new_file(self) -> None:
+        """Clear the editor and start a new untitled buffer."""
+        if not self._maybe_save_changes('Save changes before creating a new file?'):
+            return
+        self._editor.setPlainText("")
+        self._file = None
+        self._unsaved = False
+        self._update_title()
+        self._update_cursor()
+
     @Slot()
     def _open_file(self) -> None:
         """Show an Open dialog and load the selected file."""
+        if not self._maybe_save_changes('Save changes before opening another file?'):
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, 'Open File', '', 'Python Files (*.py);;All Files (*)'
         )
@@ -440,20 +472,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Prompt to save unsaved changes before closing."""
-        if self._unsaved:
-            reply = QMessageBox.question(
-                self, 'Unsaved Changes',
-                'Save changes before closing?',
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
-            )
-            if reply == QMessageBox.Save:
-                self._save_file()
-                if self._unsaved:  # Save was cancelled
-                    event.ignore()
-                    return
-            elif reply == QMessageBox.Cancel:
-                event.ignore()
-                return
+        if not self._maybe_save_changes('Save changes before closing?'):
+            event.ignore()
+            return
         event.accept()
 
 

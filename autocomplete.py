@@ -378,6 +378,8 @@ class AutocompleteController(QObject):
         )
         if symbol_suggestion:
             if settings.llm_first:
+                self._editor.set_autocomplete_suggestion(symbol_suggestion)
+                self._editor.set_status_message("Autocomplete: symbol (pending model)")
                 self._fallback_symbol = symbol_suggestion
                 self._fallback_prefix = self._pending_text[: self._pending_cursor]
                 self._fallback_cursor = self._pending_cursor
