@@ -9,7 +9,7 @@ import sys
 import os
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QMessageBox,
-    QStatusBar, QLabel, QVBoxLayout, QWidget, QInputDialog,
+    QStatusBar, QLabel, QVBoxLayout, QWidget, QInputDialog, QToolButton,
 )
 from PySide6.QtGui import (
     QAction, QKeySequence, QFont, QShortcut, QTextCursor,
@@ -19,12 +19,12 @@ from PySide6.QtCore import Slot
 
 from config import Config
 from theme import ThemeManager
-from code_editor import CodeEditor
+from core.editor import CodeEditor
 from highlighter import Highlighter
 from find_bar import FindBar
 from settings_dialog import SettingsDialog
 try:
-    from autocomplete import AutocompleteController
+    from services.autocomplete_service import AutocompleteController
 except ImportError:
     AutocompleteController = None
 
@@ -77,6 +77,9 @@ class MainWindow(QMainWindow):
         if AutocompleteController is not None:
             try:
                 self._autocomplete = AutocompleteController(self._editor, self._config)
+                self._autocomplete.slow_mode_changed.connect(
+                    self._on_llm_slow_mode
+                )
             except Exception:
                 pass
 
@@ -183,11 +186,69 @@ class MainWindow(QMainWindow):
         self._font_label = QLabel(f'Font {self._current_font_size}pt')  # Font size
         self._enc_label = QLabel('UTF-8')              # File encoding
         self._lines_label = QLabel('1 lines')          # Total line count
+        self._llm_toggle = QToolButton()
+        self._llm_toggle.setObjectName('llmToggle')
+        self._llm_toggle.setCheckable(True)
+        self._llm_toggle.setToolTip('Toggle LLM suggestions')
+        self._llm_toggle.clicked.connect(self._toggle_llm)
+        self._llm_slow = QLabel('Slow')
+        self._llm_slow.setObjectName('llmSlow')
+        self._llm_slow.hide()
 
         status.addPermanentWidget(self._pos_label)
         status.addPermanentWidget(self._font_label)
         status.addPermanentWidget(self._enc_label)
         status.addPermanentWidget(self._lines_label)
+        status.addPermanentWidget(self._llm_toggle)
+        status.addPermanentWidget(self._llm_slow)
+        self._sync_llm_controls()
+
+    def _sync_llm_controls(self) -> None:
+        """Sync the LLM toggle + indicator with current settings."""
+        if self._autocomplete is None:
+            self._llm_toggle.setEnabled(False)
+            self._llm_toggle.setChecked(False)
+            self._llm_toggle.setText('LLM: N/A')
+            self._llm_slow.hide()
+            return
+        ac_enabled = self._config.get('autocomplete', 'enabled')
+        llm_enabled = self._config.get('autocomplete', 'llm_enabled')
+        self._llm_toggle.setEnabled(ac_enabled)
+        self._llm_toggle.setChecked(llm_enabled)
+        self._llm_toggle.setText('LLM: On' if llm_enabled else 'LLM: Off')
+        if not llm_enabled or not ac_enabled:
+            self._llm_slow.hide()
+
+    def _toggle_llm(self) -> None:
+        """Toggle LLM suggestions from the status bar."""
+        if self._autocomplete is None:
+            return
+        enabled = self._llm_toggle.isChecked()
+        self._config.set('autocomplete', 'llm_enabled', enabled)
+        self._config.save()
+        self._sync_llm_controls()
+        if self._autocomplete:
+            self._autocomplete.refresh_settings()
+
+    def _format_latency(self, ms: int) -> str:
+        if ms >= 1000:
+            return f"{ms / 1000:.1f}s"
+        return f"{ms}ms"
+
+    @Slot(bool, int)
+    def _on_llm_slow_mode(self, slow: bool, latency_ms: int) -> None:
+        """Show or hide the slow-mode indicator."""
+        if not self._config.get('autocomplete', 'enabled'):
+            self._llm_slow.hide()
+            return
+        if not self._config.get('autocomplete', 'llm_enabled'):
+            self._llm_slow.hide()
+            return
+        if slow:
+            self._llm_slow.setText(f"Slow {self._format_latency(latency_ms)}")
+            self._llm_slow.show()
+        else:
+            self._llm_slow.hide()
 
     # ── Find & Replace & Go to Line ──────────────────────────────
 
@@ -239,6 +300,7 @@ class MainWindow(QMainWindow):
             self._theme.refresh()  # Re-detect OS theme
         if self._autocomplete:
             self._autocomplete.reload_settings()
+        self._sync_llm_controls()
 
     # ── Cursor / status updates ──────────────────────────────────
 
@@ -316,6 +378,19 @@ class MainWindow(QMainWindow):
             }}
             QCheckBox {{
                 color: {colors['editor_fg']};
+            }}
+            QToolButton#llmToggle {{
+                background-color: {colors['gutter_bg']};
+                color: {colors['editor_fg']};
+                border: 1px solid {colors['line_number']};
+                padding: 2px 6px;
+            }}
+            QToolButton#llmToggle:checked {{
+                background-color: {colors['selection']};
+            }}
+            QLabel#llmSlow {{
+                color: {colors['accent']};
+                padding: 0 4px;
             }}
         """)
 

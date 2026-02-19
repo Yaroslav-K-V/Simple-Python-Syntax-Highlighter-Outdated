@@ -1,6 +1,7 @@
 # Models
 model/
 model1/
+model2/
 
 # Byte-compiled / optimized
 __pycache__/

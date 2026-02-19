@@ -175,6 +175,10 @@ class SettingsDialog(QDialog):
         self._ac_enabled.setChecked(self._config.autocomplete_enabled)
         ac_layout.addRow(self._ac_enabled)
 
+        self._ac_llm_enabled = QCheckBox('Enable model suggestions (LLM)')
+        self._ac_llm_enabled.setChecked(self._config.autocomplete_llm_enabled)
+        ac_layout.addRow(self._ac_llm_enabled)
+
         # Model directory with browse button
         model_row = QHBoxLayout()
         self._ac_model_dir = QLineEdit(self._config.autocomplete_model_dir)
@@ -338,6 +342,8 @@ class SettingsDialog(QDialog):
         # Autocomplete
         self._config.set('autocomplete', 'enabled',
                          self._ac_enabled.isChecked())
+        self._config.set('autocomplete', 'llm_enabled',
+                         self._ac_llm_enabled.isChecked())
         self._config.set('autocomplete', 'model_dir',
                          self._ac_model_dir.text())
         self._config.set('autocomplete', 'device',

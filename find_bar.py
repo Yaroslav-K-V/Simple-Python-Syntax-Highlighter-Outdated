@@ -18,6 +18,8 @@ from PySide6.QtGui import (
     QTextCharFormat,
 )
 
+from services.search_service import SearchService
+
 
 class FindBar(QWidget):
     """Find & Replace toolbar for searching and replacing text in the editor.
@@ -225,31 +227,27 @@ class FindBar(QWidget):
             self._count_label.setText('')
             return
 
-        # Count matches (simple string search)
         content = self._editor.toPlainText()
-        if self._case_check.isChecked():
-            count = content.count(text)
-        else:
-            count = content.lower().count(text.lower())
+        self._match_positions = SearchService.find_positions(
+            content, text, self._case_check.isChecked()
+        )
+        count = len(self._match_positions)
 
         # Build ExtraSelection list with theme highlight
         selections = []
-        self._match_positions = []
-        cursor = self._editor.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.Start)
 
         fmt = QTextCharFormat()
         fmt.setBackground(QColor(self._theme.get_colors()['find_match']))
 
         doc = self._editor.document()
-        flags = self._get_find_flags()
-
-        # Walk through the document finding each occurrence
-        while True:
-            cursor = doc.find(text, cursor, flags)
-            if cursor.isNull():
-                break
-            self._match_positions.append(cursor.selectionStart())
+        for pos in self._match_positions:
+            cursor = QTextCursor(doc)
+            cursor.setPosition(pos)
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Right,
+                QTextCursor.MoveMode.KeepAnchor,
+                len(text),
+            )
             sel = QTextEdit.ExtraSelection()
             sel.cursor = cursor
             sel.format = fmt
@@ -284,11 +282,7 @@ class FindBar(QWidget):
             return
         cursor = self._editor.textCursor()
         pos = cursor.selectionStart() if cursor.hasSelection() else cursor.position()
-        index = None
-        for i, match_pos in enumerate(self._match_positions):
-            if match_pos >= pos:
-                index = i
-                break
+        index = SearchService.match_index(self._match_positions, pos)
         if index is None:
             index = 0
         self._count_label.setText(f'{index + 1}/{total}')

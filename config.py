@@ -29,7 +29,8 @@ DEFAULT_CONFIG = {
         'last_opened': '',               # Path to the last opened file
     },
     'autocomplete': {
-        'enabled': True,                 # Enable LLM autocomplete
+        'enabled': True,                 # Enable autocomplete (symbol + LLM)
+        'llm_enabled': True,             # Enable LLM suggestions
         'model_dir': 'model',            # Path to the model directory
         'device': 'auto',               # 'auto', 'cpu', or 'cuda'
         'max_new_tokens': 32,            # Max tokens per suggestion
@@ -40,6 +41,7 @@ DEFAULT_CONFIG = {
         'debounce_ms': 150,              # Delay before requesting a suggestion
         'allow_in_strings': False,       # Suggest inside string literals
         'llm_first': True,              # Prefer LLM over keyword completion
+        'slow_mode_ms': 900,             # Slow-mode indicator threshold
     },
 }
 
@@ -144,8 +146,13 @@ class Config:
 
     @property
     def autocomplete_enabled(self) -> bool:
-        """Whether LLM autocomplete is turned on."""
+        """Whether autocomplete is turned on."""
         return self.get('autocomplete', 'enabled')
+
+    @property
+    def autocomplete_llm_enabled(self) -> bool:
+        """Whether LLM suggestions are turned on."""
+        return self.get('autocomplete', 'llm_enabled')
 
     @property
     def autocomplete_model_dir(self) -> str:
@@ -196,3 +203,8 @@ class Config:
     def autocomplete_llm_first(self) -> bool:
         """Whether to prefer model suggestions over keyword matches."""
         return self.get('autocomplete', 'llm_first')
+
+    @property
+    def autocomplete_slow_mode_ms(self) -> int:
+        """Threshold in ms to mark model suggestions as slow."""
+        return self.get('autocomplete', 'slow_mode_ms')
