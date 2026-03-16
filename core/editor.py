@@ -14,10 +14,8 @@ from PySide6.QtGui import (
     QColor, QPainter, QTextFormat, QKeyEvent, QTextCharFormat, QTextCursor,
 )
 
-# Maps open brackets to their close counterparts
-BRACKETS = {'(': ')', '[': ']', '{': '}'}
-# Reverse map: close bracket -> open bracket
-BRACKETS_CLOSE = {v: k for k, v in BRACKETS.items()}
+from models.editor_model import EditorModel, BRACKETS, BRACKETS_CLOSE
+
 # Auto-close pairs: typing the key inserts both key + value
 AUTO_CLOSE = {'(': ')', '[': ']', '{': '}', '"': '"', "'": "'"}
 
@@ -58,6 +56,10 @@ class CodeEditor(QPlainTextEdit):
         self._tab_size = 4          # Number of spaces per indent level
         self._use_spaces = True     # True = spaces, False = real tabs
         self._ghost_text = ""       # Autocomplete suggestion shown as overlay
+        # Two separate ExtraSelection buckets so Find and editor
+        # highlights don't clobber each other.
+        self._editor_selections: list = []   # current line + bracket match
+        self._find_selections: list = []     # find/replace highlights
 
         # --- Inline completer (popup list) ---
         self._completion_model = QStringListModel(self)
@@ -171,19 +173,29 @@ class CodeEditor(QPlainTextEdit):
         self._highlight_current_line()
         self._highlight_matching_bracket()
 
+    def _apply_selections(self) -> None:
+        """Merge editor and find buckets and apply to the base widget."""
+        super().setExtraSelections(self._editor_selections + self._find_selections)
+
+    def set_find_selections(self, selections: list) -> None:
+        """Set find/replace highlight selections (called by FindController)."""
+        self._find_selections = selections
+        self._apply_selections()
+
     def _highlight_current_line(self) -> None:
         """Apply a full-width background color to the current line."""
         if self.isReadOnly():
             return
-        selections = []
         selection = QTextEdit.ExtraSelection()
         color = QColor(self._theme.get_colors()['current_line'])
         selection.format.setBackground(color)
         selection.format.setProperty(QTextFormat.FullWidthSelection, True)
         selection.cursor = self.textCursor()
         selection.cursor.clearSelection()
-        selections.append(selection)
-        self.setExtraSelections(selections)
+        # Replace editor bucket (keep bracket matches if already added)
+        bracket_sels = self._editor_selections[1:]
+        self._editor_selections = [selection] + bracket_sels
+        self._apply_selections()
 
     # ── Bracket matching ─────────────────────────────────────────
 
@@ -219,11 +231,11 @@ class CodeEditor(QPlainTextEdit):
         if match_pos < 0:
             return
 
-        # Add highlight selections for both brackets
-        selections = self.extraSelections()
+        # Add highlight selections for both brackets (append to editor bucket)
         fmt = QTextCharFormat()
         fmt.setBackground(self._theme.get_color('bracket_match'))
 
+        bracket_sels = []
         for p in [bracket_pos, match_pos]:
             sel = QTextEdit.ExtraSelection()
             sel.format = fmt
@@ -232,47 +244,15 @@ class CodeEditor(QPlainTextEdit):
             c.movePosition(QTextCursor.MoveOperation.Right,
                           QTextCursor.MoveMode.KeepAnchor)
             sel.cursor = c
-            selections.append(sel)
+            bracket_sels.append(sel)
 
-        self.setExtraSelections(selections)
+        # Keep current-line selection (index 0), replace bracket selections
+        self._editor_selections = self._editor_selections[:1] + bracket_sels
+        self._apply_selections()
 
     def _find_matching_bracket(self, text: str, pos: int, char: str) -> int:
-        """Find the position of the matching bracket using depth counting.
-
-        Args:
-            text:  Full document text.
-            pos:   Position of the bracket to match.
-            char:  The bracket character at *pos*.
-
-        Returns:
-            Index of the matching bracket, or -1 if not found.
-        """
-        if char in BRACKETS:
-            # Opening bracket -> search forward
-            target = BRACKETS[char]
-            direction = 1
-            start = pos + 1
-            end = len(text)
-        else:
-            # Closing bracket -> search backward
-            target = BRACKETS_CLOSE[char]
-            direction = -1
-            start = pos - 1
-            end = -1
-
-        depth = 1
-        i = start
-        while i != end:
-            c = text[i]
-            if c == char:
-                depth += 1      # Nested bracket of same type
-            elif c == target:
-                depth -= 1
-                if depth == 0:
-                    return i    # Found the match
-            i += direction
-
-        return -1  # No matching bracket found
+        """Delegate to EditorModel.find_matching_bracket."""
+        return EditorModel.find_matching_bracket(text, pos, char)
 
     # ── Key handling ─────────────────────────────────────────────
 
@@ -353,41 +333,17 @@ class CodeEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
     def _handle_newline(self) -> None:
-        """Insert a newline and copy the current line's indentation.
-
-        If the line ends with ':', adds one extra indent level
-        (spaces or tab, depending on settings).
-        """
+        """Insert a newline and copy the current line's indentation."""
         cursor = self.textCursor()
-        block = cursor.block()
-        line = block.text()
-
-        # Copy leading whitespace from the current line
-        indent = ''
-        for c in line:
-            if c in ' \t':
-                indent += c
-            else:
-                break
-
-        # Increase indent after a colon (e.g. def, if, for, class)
-        stripped = line.rstrip()
-        if stripped.endswith(':'):
-            if self._use_spaces:
-                indent += ' ' * self._tab_size
-            else:
-                indent += '\t'
-
-        cursor.insertText('\n' + indent)
+        line = cursor.block().text()
+        text = EditorModel.compute_newline_indent(line, self._tab_size, self._use_spaces)
+        cursor.insertText(text)
         self.setTextCursor(cursor)
 
     def _handle_tab(self) -> None:
         """Insert indentation: spaces or a real tab character."""
         cursor = self.textCursor()
-        if self._use_spaces:
-            cursor.insertText(' ' * self._tab_size)
-        else:
-            cursor.insertText('\t')
+        cursor.insertText(EditorModel.compute_tab_insert(self._tab_size, self._use_spaces))
 
     def _duplicate_line(self) -> None:
         """Duplicate the current line (Ctrl+D)."""
@@ -402,22 +358,8 @@ class CodeEditor(QPlainTextEdit):
     def _handle_backtab(self) -> None:
         """Remove one indent level from the start of the current line."""
         cursor = self.textCursor()
-        block = cursor.block()
-        line = block.text()
-
-        # Count how many whitespace chars to remove (up to tab_size)
-        remove = 0
-        for i, c in enumerate(line):
-            if c == ' ':
-                remove += 1
-                if remove >= self._tab_size:
-                    break
-            elif c == '\t':
-                remove = 1
-                break
-            else:
-                break
-
+        line = cursor.block().text()
+        remove = EditorModel.compute_backtab_removal(line, self._tab_size)
         if remove > 0:
             cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
             for _ in range(remove):
@@ -476,6 +418,7 @@ class CodeEditor(QPlainTextEdit):
             }}
         """)
         self._highlight_current_line()
+        self._apply_selections()
         self._line_area.update()
 
     def refresh_metrics(self) -> None:

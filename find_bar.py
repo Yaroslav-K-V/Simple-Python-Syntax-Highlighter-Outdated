@@ -1,28 +1,21 @@
-"""Find & Replace toolbar widget.
+"""Find & Replace toolbar widget — pure View.
 
-Provides a horizontal search/replace bar with:
-- Text input with live match counting
-- Case-sensitivity toggle
-- Previous / Next navigation (Shift+F3 / F3)
-- Replace current match / Replace All
-- Theme-colored highlight on all matches via ExtraSelection
-- Escape to close and clear highlights
+Emits user actions as signals; all search/replace logic lives in
+FindController.  This widget only handles UI layout, theme styling,
+and passing user input to the controller via signals.
 """
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QToolButton, QCheckBox,
-    QLabel, QTextEdit, QStyle, QPushButton,
+    QLabel, QStyle, QPushButton,
 )
 from PySide6.QtCore import Signal, Qt, QSize
-from PySide6.QtGui import (
-    QKeySequence, QShortcut, QTextDocument, QTextCursor, QColor,
-    QTextCharFormat,
-)
+from PySide6.QtGui import QKeySequence, QShortcut
 
-from services.search_service import SearchService
+from controllers.find_controller import FindController
 
 
 class FindBar(QWidget):
-    """Find & Replace toolbar for searching and replacing text in the editor.
+    """Find & Replace toolbar.
 
     Signals:
         closed: Emitted when the bar is dismissed (Escape or close button).
@@ -32,20 +25,23 @@ class FindBar(QWidget):
 
     def __init__(self, editor, theme_manager, parent=None) -> None:
         super().__init__(parent)
-        self._editor = editor  # Reference to the CodeEditor widget
+        self._editor = editor
         self._theme = theme_manager
         self._theme.theme_changed.connect(self._apply_theme)
-        self._match_positions: list[int] = []
         self._replace_visible = False
         self.setObjectName('findBar')
+
+        # Controller that owns all search/replace/highlight logic
+        self._ctrl = FindController(editor, theme_manager)
+        self._ctrl.match_count_updated.connect(self._on_match_count)
+
         self._setup_ui()
         self._apply_theme(self._theme.get_theme())
-        self.hide()  # Hidden by default; shown via Ctrl+F
+        self.hide()
 
     # ── UI construction ──────────────────────────────────────────
 
     def _setup_ui(self) -> None:
-        """Build the search/replace inputs, buttons, and shortcuts."""
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(4, 4, 4, 4)
         outer_layout.setSpacing(4)
@@ -54,39 +50,33 @@ class FindBar(QWidget):
         find_layout = QHBoxLayout()
         find_layout.setSpacing(6)
 
-        # Search input field
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText('Find...')
-        self._search_input.textChanged.connect(self._on_text_changed)
+        self._search_input.textChanged.connect(self._on_query_changed)
         self._search_input.returnPressed.connect(self.find_next)
         find_layout.addWidget(self._search_input)
 
-        # Label showing the number of matches
         self._count_label = QLabel('')
         self._count_label.setObjectName('matchCount')
         self._count_label.setAlignment(Qt.AlignCenter)
         self._count_label.setMinimumWidth(52)
         find_layout.addWidget(self._count_label)
 
-        # Case sensitivity checkbox
         self._case_check = QCheckBox('Aa')
         self._case_check.setToolTip('Match case')
-        self._case_check.toggled.connect(self._on_text_changed)
+        self._case_check.toggled.connect(self._on_query_changed)
         find_layout.addWidget(self._case_check)
 
-        # Previous match button
         prev_btn = self._make_tool_button(
             QStyle.SP_ArrowBack, 'Previous (Shift+F3)', self.find_prev
         )
         find_layout.addWidget(prev_btn)
 
-        # Next match button
         next_btn = self._make_tool_button(
             QStyle.SP_ArrowForward, 'Next (F3)', self.find_next
         )
         find_layout.addWidget(next_btn)
 
-        # Close button
         close_btn = self._make_tool_button(
             QStyle.SP_DialogCloseButton, 'Close (Esc)', self._close
         )
@@ -118,11 +108,9 @@ class FindBar(QWidget):
         self._replace_row.hide()
         outer_layout.addWidget(self._replace_row)
 
-        # Escape dismisses the bar
         QShortcut(QKeySequence('Escape'), self, self._close)
 
     def _make_tool_button(self, icon_style, tooltip, handler) -> QToolButton:
-        """Create a small icon-only tool button for the find bar."""
         btn = QToolButton()
         btn.setIcon(self.style().standardIcon(icon_style))
         btn.setIconSize(QSize(14, 14))
@@ -133,7 +121,6 @@ class FindBar(QWidget):
         return btn
 
     def _apply_theme(self, _: str) -> None:
-        """Style the find bar to match the current theme."""
         colors = self._theme.get_colors()
         self.setStyleSheet(f"""
             QWidget#findBar {{
@@ -174,17 +161,13 @@ class FindBar(QWidget):
             }}
         """)
         if self._search_input.text():
-            self._highlight_all()
+            self._ctrl.highlight_all(
+                self._search_input.text(), self._case_check.isChecked()
+            )
 
     # ── Show / hide ──────────────────────────────────────────────
 
     def show_and_focus(self, show_replace: bool = False) -> None:
-        """Show the find bar and focus the search input.
-
-        Args:
-            show_replace: If True, also show the replace row and focus
-                the replace input.
-        """
         self.show()
         if show_replace:
             self._replace_row.show()
@@ -195,178 +178,46 @@ class FindBar(QWidget):
             self._search_input.setFocus()
             self._search_input.selectAll()
         if self._search_input.text():
-            self._highlight_all()
+            self._ctrl.highlight_all(
+                self._search_input.text(), self._case_check.isChecked()
+            )
 
     def _close(self) -> None:
-        """Hide the bar, clear highlights, and return focus to editor."""
         self.hide()
         self._replace_row.hide()
         self._replace_visible = False
-        self._clear_highlights()
+        self._ctrl.clear_highlights()
         self._editor.setFocus()
         self.closed.emit()
 
-    # ── Search logic ─────────────────────────────────────────────
+    # ── Slots from search input ───────────────────────────────────
 
-    def _on_text_changed(self) -> None:
-        """Re-highlight matches whenever the query or options change."""
-        self._highlight_all()
-
-    def _get_find_flags(self) -> QTextDocument.FindFlag:
-        """Build Qt find flags from the current UI options."""
-        flags = QTextDocument.FindFlag(0)
-        if self._case_check.isChecked():
-            flags |= QTextDocument.FindCaseSensitively
-        return flags
-
-    def _highlight_all(self) -> None:
-        """Highlight every match in the document using ExtraSelections."""
-        self._clear_highlights()
-        text = self._search_input.text()
-        if not text:
-            self._count_label.setText('')
-            return
-
-        content = self._editor.toPlainText()
-        self._match_positions = SearchService.find_positions(
-            content, text, self._case_check.isChecked()
+    def _on_query_changed(self) -> None:
+        self._ctrl.highlight_all(
+            self._search_input.text(), self._case_check.isChecked()
         )
-        count = len(self._match_positions)
 
-        # Build ExtraSelection list with theme highlight
-        selections = []
+    def _on_match_count(self, text: str) -> None:
+        self._count_label.setText(text)
 
-        fmt = QTextCharFormat()
-        fmt.setBackground(QColor(self._theme.get_colors()['find_match']))
-
-        doc = self._editor.document()
-        for pos in self._match_positions:
-            cursor = QTextCursor(doc)
-            cursor.setPosition(pos)
-            cursor.movePosition(
-                QTextCursor.MoveOperation.Right,
-                QTextCursor.MoveMode.KeepAnchor,
-                len(text),
-            )
-            sel = QTextEdit.ExtraSelection()
-            sel.cursor = cursor
-            sel.format = fmt
-            selections.append(sel)
-
-        # Preserve the current-line highlight (index 0), append matches
-        current = self._editor.extraSelections()
-        self._editor.setExtraSelections(current[:1] + selections)
-        if count == 0:
-            self._count_label.setText('0/0')
-        else:
-            self._update_match_label()
-
-    def _clear_highlights(self) -> None:
-        """Remove search highlights but keep the current-line highlight."""
-        current = self._editor.extraSelections()
-        self._editor.setExtraSelections(current[:1])
-        self._match_positions = []
-        if not self._search_input.text():
-            self._count_label.setText('')
-        else:
-            self._count_label.setText('0/0')
-
-    def _update_match_label(self) -> None:
-        """Update the X/Y match indicator based on cursor position."""
-        total = len(self._match_positions)
-        if not self._search_input.text():
-            self._count_label.setText('')
-            return
-        if total == 0:
-            self._count_label.setText('0/0')
-            return
-        cursor = self._editor.textCursor()
-        pos = cursor.selectionStart() if cursor.hasSelection() else cursor.position()
-        index = SearchService.match_index(self._match_positions, pos)
-        if index is None:
-            index = 0
-        self._count_label.setText(f'{index + 1}/{total}')
-
-    # ── Navigation ───────────────────────────────────────────────
+    # ── Navigation / Replace (public API for shortcuts) ──────────
 
     def find_next(self) -> None:
-        """Move the cursor to the next match (wraps around to top)."""
-        text = self._search_input.text()
-        if not text:
-            return
-        flags = self._get_find_flags()
-        if not self._editor.find(text, flags):
-            # No match found ahead -> wrap to document start
-            cursor = self._editor.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.Start)
-            self._editor.setTextCursor(cursor)
-            self._editor.find(text, flags)
-        self._update_match_label()
+        self._ctrl.find_next(self._search_input.text(), self._case_check.isChecked())
 
     def find_prev(self) -> None:
-        """Move the cursor to the previous match (wraps around to end)."""
-        text = self._search_input.text()
-        if not text:
-            return
-        flags = self._get_find_flags() | QTextDocument.FindBackward
-        if not self._editor.find(text, flags):
-            # No match found behind -> wrap to document end
-            cursor = self._editor.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            self._editor.setTextCursor(cursor)
-            self._editor.find(text, flags)
-        self._update_match_label()
-
-    # ── Replace ──────────────────────────────────────────────────
+        self._ctrl.find_prev(self._search_input.text(), self._case_check.isChecked())
 
     def replace_current(self) -> None:
-        """Replace the current match and advance to the next one."""
-        search_text = self._search_input.text()
-        if not search_text:
-            return
-
-        cursor = self._editor.textCursor()
-        if not cursor.hasSelection():
-            self.find_next()
-            return
-
-        # Check if the current selection matches the search text
-        selected = cursor.selectedText()
-        case_sensitive = self._case_check.isChecked()
-        if case_sensitive:
-            match = selected == search_text
-        else:
-            match = selected.lower() == search_text.lower()
-
-        if match:
-            replace_text = self._replace_input.text()
-            cursor.insertText(replace_text)
-            self._highlight_all()
-
-        self.find_next()
+        self._ctrl.replace_current(
+            self._search_input.text(),
+            self._replace_input.text(),
+            self._case_check.isChecked(),
+        )
 
     def replace_all(self) -> None:
-        """Replace all matches in the document as a single undo operation."""
-        search_text = self._search_input.text()
-        if not search_text:
-            return
-
-        replace_text = self._replace_input.text()
-        flags = self._get_find_flags()
-        doc = self._editor.document()
-
-        cursor = QTextCursor(doc)
-        cursor.movePosition(QTextCursor.MoveOperation.Start)
-
-        count = 0
-        cursor.beginEditBlock()
-        while True:
-            cursor = doc.find(search_text, cursor, flags)
-            if cursor.isNull():
-                break
-            cursor.insertText(replace_text)
-            count += 1
-        cursor.endEditBlock()
-
-        self._highlight_all()
-        self._editor.set_status_message(f'Replaced {count} occurrence(s)')
+        self._ctrl.replace_all(
+            self._search_input.text(),
+            self._replace_input.text(),
+            self._case_check.isChecked(),
+        )

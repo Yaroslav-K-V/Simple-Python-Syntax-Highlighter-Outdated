@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import builtins
-import keyword
 import os
-import re
 import threading
 import time
 
@@ -17,6 +14,8 @@ from transformers import (
     StoppingCriteriaList,
 )
 from PySide6.QtCore import QObject, Signal, Slot, QThread, QTimer
+
+from models.autocomplete_model import AutocompleteModel
 
 
 class _SharedState:
@@ -209,26 +208,16 @@ class AutocompleteController(QObject):
     """Connects editor events to the autocomplete engine."""
 
     slow_mode_changed = Signal(bool, int)
-
-    _COMMON_DOT_IDENTIFIERS = [
-        "Console.WriteLine",
-        "Console.Write",
-        "System.out.println",
-        "System.out.print",
-        "System.out.printf",
-        "String.format",
-        "Math.Max",
-        "Math.Min",
-        "Math.Abs",
-        "Math.Round",
-        "Math.Floor",
-        "Math.Ceiling",
-    ]
+    # Emitted instead of calling editor methods directly
+    suggestion_ready = Signal(str)      # text to show as ghost suggestion
+    autocomplete_cleared = Signal()     # request to clear ghost text
+    status_updated = Signal(str)        # status bar message
 
     def __init__(self, editor, config) -> None:
         super().__init__(editor)
         self._editor = editor
         self._config = config
+        self._ac_model = AutocompleteModel()
         self._max_suggestion_chars = 80
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -242,8 +231,6 @@ class AutocompleteController(QObject):
         self._latest_request_id = 0
         self._latest_request_started = 0.0
         self._latest_prefix = ""
-        self._last_symbol_text = ""
-        self._symbol_cache: list[str] = []
         self._fallback_symbol = ""
         self._fallback_prefix = ""
         self._fallback_cursor = 0
@@ -251,91 +238,6 @@ class AutocompleteController(QObject):
 
         self._editor.textChanged.connect(self._on_text_changed)
         self._editor.cursorPositionChanged.connect(self._on_cursor_changed)
-
-    def _extract_symbols(self, text: str) -> list[str]:
-        if text == self._last_symbol_text:
-            return self._symbol_cache
-        tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", text))
-        tokens.update(keyword.kwlist)
-        tokens.update(dir(builtins))
-        tokens.update(self._COMMON_DOT_IDENTIFIERS)
-        self._last_symbol_text = text
-        self._symbol_cache = list(tokens)
-        return self._symbol_cache
-
-    def _word_prefix(self, text: str, cursor_pos: int) -> tuple[str, int]:
-        if cursor_pos <= 0:
-            return "", cursor_pos
-        start = cursor_pos
-        while start > 0 and re.match(r"[A-Za-z0-9_]", text[start - 1]):
-            start -= 1
-        prefix = text[start:cursor_pos]
-        return prefix, start
-
-    def _can_complete_here(self, text: str, cursor_pos: int) -> bool:
-        if cursor_pos < len(text):
-            next_char = text[cursor_pos]
-            if re.match(r"[A-Za-z0-9_]", next_char):
-                return False
-        return True
-
-    def _in_string_or_comment(self, text: str, cursor_pos: int) -> bool:
-        line_start = text.rfind("\n", 0, cursor_pos) + 1
-        line = text[line_start:cursor_pos]
-        in_single = False
-        in_double = False
-        escape = False
-        i = 0
-        while i < len(line):
-            ch = line[i]
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif not in_double and ch == "'" and line[i:i + 3] != "'''":
-                in_single = not in_single
-            elif not in_single and ch == '"' and line[i:i + 3] != '"""':
-                in_double = not in_double
-            elif not in_single and not in_double and ch == "#":
-                return True
-            i += 1
-        return in_single or in_double
-
-    def _symbol_suggestion(self, text: str, cursor_pos: int) -> str:
-        if not self._can_complete_here(text, cursor_pos):
-            return ""
-        prefix, _ = self._word_prefix(text, cursor_pos)
-        if not prefix:
-            return self._assignment_symbol_suggestion(text, cursor_pos)
-        symbols = self._extract_symbols(text)
-        matches = [s for s in symbols if s.startswith(prefix) and s != prefix]
-        if not matches:
-            return ""
-        matches.sort(
-            key=lambda s: (-text.rfind(s), len(s), s)
-        )
-        best = matches[0]
-        return best[len(prefix):]
-
-    def _assignment_symbol_suggestion(self, text: str, cursor_pos: int) -> str:
-        pos = cursor_pos - 1
-        while pos >= 0 and text[pos].isspace():
-            pos -= 1
-        if pos < 0:
-            return ""
-        if text[pos] not in "=+-*/%&|^~,:()[]{}":
-            return ""
-        line_start = text.rfind("\n", 0, cursor_pos) + 1
-        prior_text = text[:line_start]
-        if not prior_text:
-            return ""
-        last_symbol = ""
-        for match in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=", prior_text):
-            eq_pos = match.end() - 1
-            if eq_pos + 1 < len(prior_text) and prior_text[eq_pos + 1] == "=":
-                continue
-            last_symbol = match.group(1)
-        return last_symbol
 
     def _read_settings(self) -> AutocompleteSettings:
         model_dir = self._config.get("autocomplete", "model_dir")
@@ -363,50 +265,50 @@ class AutocompleteController(QObject):
         self._engine.suggestion_ready.connect(self._on_suggestion)
         self._engine.status.connect(self._on_status)
         self._engine.error.connect(self._on_error)
-        self._editor.clear_autocomplete()
+        self.autocomplete_cleared.emit()
         self._set_slow_mode(False, 0)
 
     def refresh_settings(self) -> None:
         """Update settings without recreating the engine."""
         settings = self._read_settings()
         self._engine.update_settings(settings)
-        self._editor.clear_autocomplete()
+        self.autocomplete_cleared.emit()
         self._set_slow_mode(False, 0)
 
     @Slot()
     def _on_text_changed(self) -> None:
         settings = self._read_settings()
         if not settings.enabled:
-            self._editor.clear_autocomplete()
+            self.autocomplete_cleared.emit()
             self._set_slow_mode(False, 0)
             return
         self._pending_text = self._editor.toPlainText()
         self._pending_cursor = self._editor.textCursor().position()
-        self._editor.clear_autocomplete()
+        self.autocomplete_cleared.emit()
         self._fallback_symbol = ""
         self._fallback_prefix = ""
         self._fallback_cursor = 0
         if not settings.allow_in_strings:
-            if self._in_string_or_comment(
+            if self._ac_model.is_in_string_or_comment(
                 self._pending_text, self._pending_cursor
             ):
                 return
-        symbol_suggestion = self._symbol_suggestion(
+        symbol_suggestion = self._ac_model.symbol_suggestion(
             self._pending_text, self._pending_cursor
         )
         if symbol_suggestion:
             if settings.llm_first and settings.llm_enabled:
-                self._editor.set_autocomplete_suggestion(symbol_suggestion)
-                self._editor.set_status_message("Autocomplete: symbol (LLM pending)")
+                self.suggestion_ready.emit(symbol_suggestion)
+                self.status_updated.emit("Autocomplete: symbol (LLM pending)")
                 self._fallback_symbol = symbol_suggestion
                 self._fallback_prefix = self._pending_text[: self._pending_cursor]
                 self._fallback_cursor = self._pending_cursor
             else:
-                self._editor.set_autocomplete_suggestion(symbol_suggestion)
+                self.suggestion_ready.emit(symbol_suggestion)
                 if settings.llm_enabled:
-                    self._editor.set_status_message("Autocomplete: symbol")
+                    self.status_updated.emit("Autocomplete: symbol")
                 else:
-                    self._editor.set_status_message("Autocomplete: symbol (LLM off)")
+                    self.status_updated.emit("Autocomplete: symbol (LLM off)")
                 return
         if not settings.llm_enabled:
             self._set_slow_mode(False, 0)
@@ -415,7 +317,7 @@ class AutocompleteController(QObject):
 
     @Slot()
     def _on_cursor_changed(self) -> None:
-        self._editor.clear_autocomplete()
+        self.autocomplete_cleared.emit()
         self._fallback_symbol = ""
         self._fallback_prefix = ""
         self._fallback_cursor = 0
@@ -429,14 +331,14 @@ class AutocompleteController(QObject):
             self._set_slow_mode(False, 0)
             return
         if not settings.allow_in_strings:
-            if self._in_string_or_comment(
+            if self._ac_model.is_in_string_or_comment(
                 self._pending_text, self._pending_cursor
             ):
                 return
         prefix = self._pending_text[: self._pending_cursor]
         self._latest_prefix = prefix
         if not self._fallback_symbol:
-            self._editor.set_status_message("Autocomplete: model (pending)")
+            self.status_updated.emit("Autocomplete: model (pending)")
         self._latest_request_started = time.monotonic()
         self._latest_request_id = self._engine.request(prefix, self._pending_cursor)
 
@@ -455,57 +357,29 @@ class AutocompleteController(QObject):
             return
         if self._editor.toPlainText()[:cursor_pos] != prefix:
             return
-        suggestion = self._sanitize_suggestion(suggestion, prefix)
+        suggestion = self._ac_model.sanitize_suggestion(suggestion, prefix, self._max_suggestion_chars)
         if not suggestion:
             if (
                 settings.llm_first
-                and
-                self._fallback_symbol
+                and self._fallback_symbol
                 and cursor_pos == self._fallback_cursor
                 and prefix == self._fallback_prefix
             ):
-                self._editor.set_autocomplete_suggestion(self._fallback_symbol)
-                self._editor.set_status_message("Autocomplete: symbol")
+                self.suggestion_ready.emit(self._fallback_symbol)
+                self.status_updated.emit("Autocomplete: symbol")
                 if elapsed_ms is not None:
                     self._update_slow_mode(elapsed_ms)
                 return
-            self._editor.clear_autocomplete()
+            self.autocomplete_cleared.emit()
             if elapsed_ms is not None:
                 self._update_slow_mode(elapsed_ms)
             return
-        self._editor.set_autocomplete_suggestion(suggestion)
+        self.suggestion_ready.emit(suggestion)
         if elapsed_ms is not None:
             self._update_slow_mode(elapsed_ms)
-            self._editor.set_status_message(
-                self._format_model_status(elapsed_ms)
-            )
+            self.status_updated.emit(self._format_model_status(elapsed_ms))
         else:
-            self._editor.set_status_message("Autocomplete: model")
-
-    def _sanitize_suggestion(self, suggestion: str, prefix: str) -> str:
-        suggestion = suggestion.lstrip("\r\n")
-        if not suggestion:
-            return ""
-        word_prefix, _ = self._word_prefix(prefix, len(prefix))
-        if word_prefix:
-            suggestion = suggestion.lstrip()
-            if not suggestion:
-                return ""
-            if suggestion.startswith(word_prefix):
-                suggestion = suggestion[len(word_prefix):]
-                if not suggestion:
-                    return ""
-            if not re.match(r"[A-Za-z0-9_]", suggestion[0]):
-                return ""
-        if len(suggestion) > self._max_suggestion_chars:
-            suggestion = suggestion[: self._max_suggestion_chars]
-        if len(suggestion) > 8:
-            unique = set(suggestion)
-            if len(unique) == 1:
-                return ""
-            if all(ch.isdigit() for ch in suggestion):
-                return ""
-        return suggestion
+            self.status_updated.emit("Autocomplete: model")
 
     def _record_latency_ms(self) -> int | None:
         if self._latest_request_started <= 0:
@@ -531,10 +405,10 @@ class AutocompleteController(QObject):
 
     @Slot(str)
     def _on_status(self, message: str) -> None:
-        self._editor.set_status_message(message)
+        self.status_updated.emit(message)
 
     @Slot(int, str)
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._latest_request_id:
             self._set_slow_mode(False, 0)
-            self._editor.set_status_message(f"Autocomplete: model error: {message}")
+            self.status_updated.emit(f"Autocomplete: model error: {message}")
